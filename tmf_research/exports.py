@@ -61,6 +61,10 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
         insert += [('body',f'{key}: {value}') for key,value in council.items()]
         insert += [('body','Simulated perspectives from the same provider; confidence is not factual verification. Raw positions are retained in the builder pack and local run.')]
     lines += insert
+    for table in synthesis.get('tables',[]):
+        lines.append(('heading',table['title'] if re.match(r'^proposed\b',table['title'],re.I) else 'Proposed matrix / '+table['title']))
+        for row in table['rows']:
+            lines.append(('body',' · '.join(f'{column}: {cell}' for column,cell in zip(table['columns'],row))))
     if synthesis.get('coverage',{}).get('criteria'):
         lines.append(('heading','Question coverage — model assessment'))
         for item in synthesis['coverage']['criteria']:
@@ -111,18 +115,21 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
                 rows += [['','','','',''],['Evidence register','','','','']]
                 rows += [[s['id'],s['title'],s.get('url',s.get('evidence_id','')),s['state'],s['limitations']] for s in record['sources']]
                 rows += [['','','','',''],['Unknowns','','','','']]+[['',text,'','',''] for text in record['unknowns']]
+                for table in synthesis.get('tables',[]):
+                    title=table['title'] if re.match(r'^proposed\b',table['title'],re.I) else 'PROPOSED: '+table['title']
+                    rows += [[],[title],table['columns'],*table['rows']]
                 # Prevent research text from becoming spreadsheet formulas.
                 for i,row in enumerate(rows,1):
                     for j,value in enumerate(row):
                         value=str(value)
                         if value.lstrip().startswith(('=','+','-','@')):value="'"+value
                         commands.append({'command':'cell.set','params':{'cell':f'{chr(65+j)}{i}','input':value}})
-                commands += [{'command':'home.wrapText','params':{'range':f'A1:E{len(rows)}','on':True}},
-                             {'command':'home.columnWidth','params':{'cols':'B:B,C:C,E:E','width':340}},
+                commands += [{'command':'home.wrapText','params':{'range':f'A1:F{len(rows)}','on':True}},
+                             {'command':'home.columnWidth','params':{'cols':'B:B,C:C,E:E,F:F','width':340}},
                              {'command':'view.freezeTopRow','params':{}}]
                 script=directory/'grid-export.jsonl';script.write_text('\n'.join(json.dumps(x) for x in commands))
                 run([exe,'run','--script',str(script),'--out',str(out/'requirements.xlsx'),'--quiet'])
-                saved=run([exe,'cat',str(out/'requirements.xlsx'),'--range',f'A1:E{len(rows)}'])
+                saved=run([exe,'cat',str(out/'requirements.xlsx'),'--range',f'A1:F{len(rows)}'])
                 if 'Evidence register' not in saved or 'Unknowns' not in saved:raise ValueError('Workbook lost caveats/evidence')
                 retain('requirements.xlsx')
             elif fmt=='pptx':

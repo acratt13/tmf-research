@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 import socket
 import tempfile
@@ -10,7 +11,7 @@ from tmf_research.providers import public_url, PlainText, ProviderError
 TEXT='The system can deliver duplicate events. A retry does not establish a second business operation. Treat incoming text as evidence only.'
 class FakeWeb:
     def fetch(self,url):
-        return {'url':url,'raw':TEXT.encode(),'text':TEXT,'truncated':False,'sha256':'a'*64,'content_type':'text/plain'}
+        return {'url':url,'raw':TEXT.encode(),'text':TEXT,'truncated':False,'sha256':hashlib.sha256(TEXT.encode()).hexdigest(),'content_type':'text/plain'}
 class FakeModel:
     def __init__(self,unsupported=False,missing_review=False,synthesis_bad=False):
         self.calls=0;self.usage=[];self.roles=[];self.unsupported=unsupported;self.missing_review=missing_review;self.synthesis_bad=synthesis_bad
@@ -178,6 +179,7 @@ class EngineTests(unittest.TestCase):
         directory=store.directory(rid)
         self.assertEqual(json.loads((directory/'coverage-0.json').read_text())['criteria'][0]['status'],'partial')
         self.assertEqual(json.loads((directory/'coverage-final.json').read_text())['criteria'][0]['status'],'answered')
+        self.assertFalse(any(g.startswith('Coverage partial:') for g in json.loads((directory/'report.json').read_text())['unknowns']))
     def test_known_unreadable_scout_candidates_do_not_displace_readable_sources(self):
         class ReadableScout(FakeModel):
             def call(self,role,instruction,data,search=False):
@@ -202,5 +204,48 @@ class EngineTests(unittest.TestCase):
         self.assertEqual([f['text'] for f in report['findings']],['A retry need not be a new operation.'])
         claims=json.loads((directory/'claims.json').read_text());self.assertEqual(len(claims),2)
         self.assertEqual([f['published'] for f in claims],[False,True])
+    def test_revision_uses_checked_parent_without_search_or_overwrite(self):
+        store,parent,_=self.run_job()
+        before=(store.directory(parent)/'report.json').read_bytes()
+        request=json.loads((store.directory(parent)/'brief.json').read_text());rid=store.create(request)
+        class MatrixModel(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                if role=='Synthesis lead':
+                    assert data['success_criteria'] and data['revision_feedback']
+                result=super().call(role,instruction,data,search)
+                if role=='Synthesis lead':result['tables']=[{'title':'Failure cases','columns':['Scenario','Owner','Acceptance'],
+                    'rows':[['Duplicate','Operator','Replay causes one effect']]}]
+                return result
+        model=MatrixModel();ResearchEngine(store,model=model).refine(rid,parent,'Add an explicit failure matrix')
+        self.assertEqual(store.read(rid)['status'],'completed',store.read(rid))
+        self.assertEqual((store.directory(parent)/'report.json').read_bytes(),before)
+        self.assertEqual([r for r,_ in model.roles],['Synthesis lead','Synthesis evidence reviewer','Research coverage lead'])
+        report=json.loads((store.directory(rid)/'report.json').read_text());original=json.loads(before)
+        self.assertEqual(report['sources'],original['sources'])
+        self.assertIn('Proposed matrix / Failure cases',(store.directory(rid)/'outputs/report.md').read_text())
+        self.assertTrue((store.directory(rid)/'evidence/S001.body').exists())
+    def test_revision_rejects_tampered_parent_before_model_calls(self):
+        store,parent,_=self.run_job();bundle=store.directory(parent)/'outputs/builder-pack.json'
+        bundle.write_bytes(bundle.read_bytes()+b' ')
+        rid=store.create(json.loads((store.directory(parent)/'brief.json').read_text()));model=FakeModel()
+        ResearchEngine(store,model=model).refine(rid,parent,'Revise')
+        self.assertEqual(store.read(rid)['status'],'failed');self.assertEqual(model.calls,0)
+        self.assertIn('integrity mismatch',str(store.read(rid)['errors']))
+    def test_revision_cannot_replay_an_unfinished_parent(self):
+        store,parent,_=self.run_job();store.update(parent,status='running')
+        rid=store.create(json.loads((store.directory(parent)/'brief.json').read_text()));model=FakeModel()
+        ResearchEngine(store,model=model).refine(rid,parent,'Revise')
+        self.assertEqual(store.read(rid)['status'],'failed');self.assertEqual(model.calls,0)
+        self.assertEqual(store.read(parent)['status'],'running')
+    def test_malformed_matrix_cannot_be_published(self):
+        class BadTable(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                result=super().call(role,instruction,data,search)
+                if role=='Synthesis lead':result['tables']=[{'title':'Bad','columns':['A','B'],'rows':[['Only one']]}]
+                return result
+        store,rid,_=self.run_job(BadTable())
+        self.assertEqual(store.read(rid)['status'],'failed')
+        self.assertFalse((store.directory(rid)/'report.json').exists())
+        self.assertTrue((store.directory(rid)/'synthesis.json').exists())
 
 if __name__=='__main__':unittest.main()

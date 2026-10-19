@@ -42,7 +42,7 @@ def serve(root, config=None, port=8765):
                     runs=[]
                     for p in sorted(store.root.glob('*/state.json'),key=lambda p:p.stat().st_mtime,reverse=True)[:30]:
                         state=json.loads(p.read_text());request=json.loads((p.parent/'brief.json').read_text())
-                        runs.append({'id':state['id'],'status':state['status'],'question':request['question']})
+                        runs.append({'id':state['id'],'status':state['status'],'question':request['question'],'parent_id':state.get('parent_id')})
                     self.reply(200,runs);return
                 if path.startswith('/api/result/'):
                     run_id=path.rsplit('/',1)[1];directory=store.directory(run_id)
@@ -89,6 +89,21 @@ def serve(root, config=None, port=8765):
                             with lock:active.pop(run_id,None)
                     threading.Thread(target=execute,daemon=True).start()
                     return self.reply(202,{'id':run_id})
+                if self.path=='/api/refine':
+                    parent_id=payload.get('id');feedback=payload.get('feedback')
+                    if not isinstance(feedback,str) or not 1<=len(feedback.strip())<=3000:raise ValueError('Provide revision feedback')
+                    parent=store.directory(parent_id)
+                    if store.read(parent_id)['status'] not in ('completed','partial'):return self.reply(409,{'error':'Wait for the investigation to finish'})
+                    if not (parent/'outputs/builder-pack.json').exists():return self.reply(409,{'error':'This run has no retained builder evidence bundle'})
+                    with lock:
+                        if active:return self.reply(409,{'error':'Wait for the active job before revising'})
+                        run_id=store.create(json.loads((parent/'brief.json').read_text()));engine=ResearchEngine(store,config);active[run_id]=engine
+                    def revise():
+                        try:engine.refine(run_id,parent_id,feedback.strip())
+                        finally:
+                            with lock:active.pop(run_id,None)
+                    threading.Thread(target=revise,daemon=True).start()
+                    return self.reply(202,{'id':run_id,'parent_id':parent_id})
                 if self.path=='/api/export':
                     run_id=payload.get('id');directory=store.directory(run_id)
                     formats=payload.get('formats',[])

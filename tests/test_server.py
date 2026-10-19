@@ -72,6 +72,11 @@ class ServerTests(unittest.TestCase):
         directory=self.store.directory(self.rid)
         (directory/'synthesis.json').write_text(json.dumps({'sections':[{'text':'Rejected sales claim'}]}))
         self.assertNotIn('Rejected sales claim',json.dumps(self.request('/api/result/'+self.rid)))
+    def test_refine_rejects_empty_or_unbounded_feedback(self):
+        for feedback in ['', ' '*5, 'x'*3001]:
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.request('/api/refine',{'id':self.rid,'feedback':feedback})
+            self.assertEqual(caught.exception.code,400);caught.exception.close()
     def test_resolved_export_failure_is_archived(self):
         self.store.update(self.rid,status='partial',errors=['Requested md export unavailable (RuntimeError); no successful export claimed'])
         self.request('/api/export',{'id':self.rid,'formats':['md']})

@@ -201,6 +201,11 @@ def main(argv=None):
     run.add_argument("brief")
     run.add_argument("--runs", default="runs/council")
     run.add_argument("--config", help="Local operator configuration JSON")
+    refine = sub.add_parser("refine", help="Revise finished retained evidence without repeating acquisition")
+    refine.add_argument("parent")
+    refine.add_argument("--feedback", required=True)
+    refine.add_argument("--runs", default="runs/council")
+    refine.add_argument("--config")
     check = sub.add_parser("validate", help="Check report structure and source references, not claim truth")
     check.add_argument("record")
     render = sub.add_parser("render", help="Render one structured record as Markdown, HTML or PDF")
@@ -225,6 +230,14 @@ def main(argv=None):
             if not 1024 <= args.port <= 65535:
                 raise ValueError("Use an unprivileged local port")
             serve_workbench(args.runs, read_json(args.config) if args.config else {}, args.port)
+        elif args.command == "refine":
+            from .engine import ResearchEngine, RunStore
+            store=RunStore(args.runs)
+            run_id=store.create(read_json(store.directory(args.parent)/'brief.json'))
+            print(dump({'run_id':run_id,'parent_id':args.parent,'status':'queued'}),end='',flush=True)
+            ResearchEngine(store,read_json(args.config) if args.config else {}).refine(run_id,args.parent,args.feedback)
+            state=store.read(run_id);print(dump(state),end='')
+            return 0 if state['status']=='completed' else 2
         elif args.command == "run":
             from .engine import ResearchEngine, RunStore
             store = RunStore(args.runs)

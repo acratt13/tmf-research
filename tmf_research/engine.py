@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import shutil
 import threading
 import uuid
 
@@ -432,78 +433,143 @@ class ResearchEngine:
             self.gaps.extend('Unresolved follow-up query: '+str(q) for q in queries)
             self.store.save(run_id,'claims.json',self.findings)
             if not accepted: raise ProviderError('No findings survived evidence review')
-            self.event('synthesize','Writer is assembling the blueprint from reviewed findings and explicit unknowns.')
-            council_file=self.store.directory(run_id)/'council.json'
-            synthesis=self.call('Synthesis lead', 'Using only reviewed findings, write a useful research result. '
-                                'Return {"title":"...","summary":"...","sections":[{"heading":"...","text":"..."}],'
-                                '"finding_ids":["F001"],'
-                                '"requirements":[{"text":"...","acceptance":"...","basis":["source IDs"]}],"unknowns":["..."],'
-                                '"workflow_steps":[{"label":"...","detail":"..."}],"council_synthesis":'
-                                '{"agreement":"...","strongest_dissent":"...","recommendation":"..."}}. '
-                                'Preserve dissent and source IDs. Cover selected lenses. Requirements and workflow are PROPOSED, not implemented. '
-                                'No invented price, demand or verified behavior. At most 20 requirements and 6 short workflow steps. '
-                                'Do not promote source titles, package names or version metadata into factual conclusions unless a reviewed finding establishes them. '
-                                'Choose a concise, non-overlapping set of reviewed finding_ids for publication; preserve distinct risks and contrary evidence. '
-                                'Do not rewrite claims or pad the findings list with repeated service proposals already covered by analysis. '
-                                'Identify assumptions that would change the recommendation. Do not erase unanswered council evidence requests.',
-                                {'brief':self.request,'findings':accepted,'requirements':self.requirements,
-                                 'unknowns':self.gaps[:35], 'council':json.loads(council_file.read_text()) if council_file.exists() else None})
-            self.store.save(run_id,'synthesis.json',synthesis)
-            final_review=self.call('Synthesis evidence reviewer',
-                                   'Check the proposed summary and analysis against the reviewed findings. '
-                                   'Return {"supported":true,"concerns":["..."]}. Set supported=false for new '
-                                   'unsupported factual assertions, concealed gaps, or suppressed council dissent. '
-                                   'Explicit recommendations and proposed requirements need not be proven facts. '
-                                   'This is model review, not independent certification.',
-                                   {'synthesis':synthesis,'reviewed_findings':accepted,
-                                    'material_gaps':self.gaps,'scope_limits':plan.get('scope_limits',[]),
-                                    'council':json.loads(council_file.read_text()) if council_file.exists() else None})
-            self.store.save(run_id,'synthesis-review.json',final_review)
-            if final_review.get('supported') is not True:
-                self.error('Synthesis support review did not pass; draft retained and unsupported analysis withheld')
-                self.gaps.extend(str(x) for x in final_review.get('concerns',[])[:8])
-                synthesis={'title':self.request['question'],
-                           'summary':'Reviewed findings are available below. The proposed narrative did not pass source-support review and has been withheld.',
-                           'sections':[], 'council_synthesis':{},'requirements':self.requirements,
-                           'workflow_steps':[],'unknowns':[]}
-            else:
-                chosen=synthesis.get('finding_ids')
-                if isinstance(chosen,list) and chosen and all(isinstance(fid,str) and fid in {f['id'] for f in accepted} for fid in chosen):
-                    accepted=[f for f in accepted if f['id'] in chosen]
-            self.coverage(plan,queries,analysis=synthesis)
-            synthesis['coverage']=self.coverage_result
-            for finding in self.findings: finding['published']=finding['id'] in {f['id'] for f in accepted}
-            self.store.save(run_id,'claims.json',self.findings)
-            req=synthesis.get('requirements',self.requirements)
-            if not isinstance(req,list): raise ProviderError('Invalid synthesis requirements')
-            source_ids={s['id'] for s in self.sources if s['state']!='unavailable'}
-            requirements=[dict(id=f'R{i:03}',text=x['text'],acceptance=x['acceptance'],
-                               basis=[sid for sid in x.get('basis',[]) if isinstance(sid,str) and sid in source_ids]) for i,x in enumerate(req[:20],1)
-                          if isinstance(x,dict) and isinstance(x.get('text'),str) and isinstance(x.get('acceptance'),str)]
-            unknowns=list(dict.fromkeys(self.gaps + [str(x) for x in synthesis.get('unknowns',[])] + [
-                'Source selection, model review and advisory perspectives can be wrong. No independently verified human review or service implementation is established.',
-                'Models share a provider; role separation is not provider diversity. Source snapshots and source contexts are bounded.',
-            ]))
-            record=dict(schema_version=1,title=str(synthesis.get('title') or self.request['question']),question=self.request['question'],
-                        summary=str(synthesis.get('summary') or 'Partial research result'),sources=self.sources,
-                        findings=[{**{k:f[k] for k in ('text','label','sources')},
-                                   'caveat':' '.join(dict.fromkeys([f['caveat']]+[d['caveat'] for d in self.findings if d.get('duplicate_of')==f['id']]))} for f in accepted],
-                        requirements=requirements,unknowns=unknowns)
-            validate(record);self.store.save(run_id,'report.json',record)
-            self.check()
-            from .exports import export_run
-            outputs, export_errors=export_run(self.store.directory(run_id),record,synthesis,self.request['formats'],self.config,self.check)
-            self.errors.extend(export_errors)
-            partial=bool(self.errors or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
-            self.store.save(run_id,'usage.json',{'calls':getattr(self.model,'calls',None),'roles':getattr(self.model,'usage',[]),
-                                               'limits':limits,'dollar_cost':'unavailable; subscription usage and native-search costs are not a hard monetary budget'})
-            with self.store.lock:
-                self.check()
-                self.store.update(run_id,status='partial' if partial else 'completed',stage='done',finished_at=timestamp(),
-                                  outputs=outputs,errors=self.errors,findings=len(accepted),requirements=len(requirements))
+            self.publish(plan,accepted,limits,queries)
         except InterruptedError:
             self.store.update(run_id,status='cancelled',stage='cancelled',finished_at=timestamp(),errors=self.errors)
         except Exception as exc:
             detail=(' '+str(exc)[:200]) if isinstance(exc,ProviderError) else ''
             self.error(f'Research stopped ({type(exc).__name__}).{detail} Retained evidence remains available locally')
             self.store.update(run_id,status='failed',stage='failed',finished_at=timestamp(),errors=self.errors)
+
+    def refine(self, run_id, parent_id, feedback):
+        """New synthesis from a hash-checked parent bundle; no source acquisition."""
+        self.run_id=run_id
+        try:
+            parent=self.store.directory(parent_id);directory=self.store.directory(run_id)
+            if parent==directory or self.store.read(parent_id)['status'] not in ('completed','partial'):
+                raise ProviderError('Revision requires a finished parent investigation')
+            if not isinstance(feedback,str) or not 1<=len(feedback)<=3000: raise ProviderError('Provide bounded revision feedback')
+            receipt=json.loads((parent/'outputs/export-receipt.json').read_text())
+            artifact=next((a for a in receipt['artifacts'] if a['file']=='builder-pack.json'),None)
+            raw=(parent/'outputs/builder-pack.json').read_bytes()
+            if not artifact or hashlib.sha256(raw).hexdigest()!=artifact['sha256']: raise ProviderError('Parent builder bundle integrity mismatch')
+            bundle=json.loads(raw);record=validate(bundle['report'])
+            report_hash=hashlib.sha256(dump(record).encode()).hexdigest()
+            if report_hash!=receipt['record_sha256']: raise ProviderError('Parent report integrity mismatch')
+            self.request=json.loads((directory/'brief.json').read_text());self.feedback=feedback
+            self.sources=record['sources'];self.findings=bundle['claims'];self.requirements=record['requirements']
+            self.gaps=[g for g in record['unknowns'] if not g.startswith('Coverage ')]
+            self.coverage_result=bundle['analysis'].get('coverage',{'criteria':[]})
+            plan=bundle['plan'];plan.setdefault('success_criteria',[record['question']])
+            for key in ('plan','claims','council'):
+                if key in bundle:self.store.save(run_id,key+'.json',bundle[key])
+            self.store.save(run_id,'sources.json',self.sources)
+            evidence=directory/'evidence';evidence.mkdir()
+            for source in self.sources:
+                if source['state']=='unavailable':continue
+                original=parent/'evidence'/(source['id']+'.body') if source.get('url') else parent/(source['id']+'.json')
+                if hashlib.sha256(original.read_bytes()).hexdigest()!=source['artifact_sha256']: raise ProviderError('Parent source integrity mismatch')
+                shutil.copyfile(original,evidence/original.name if source.get('url') else directory/original.name)
+                if source.get('url'):shutil.copyfile(parent/'evidence'/(source['id']+'.txt'),evidence/(source['id']+'.txt'))
+            self.store.save(run_id,'revision.json',{'parent_id':parent_id,'parent_report_sha256':report_hash,'feedback':feedback,
+                'scope':'Retained-evidence synthesis revision; original retrieval times preserved; no source acquisition or automatic replay'})
+            self.errors=['Retained source '+s['id']+' is unavailable' for s in self.sources if s['state']=='unavailable']
+            limits={'sources':0,'rounds':0,'calls':4}
+            self.model=self.model_override or CodexModel(self.config.get('codex','codex'),max_calls=4)
+            self.store.update(run_id,status='running',parent_id=parent_id)
+            self.publish(plan,self.accepted(),limits,[])
+        except InterruptedError:
+            self.store.update(run_id,status='cancelled',stage='cancelled',errors=self.errors)
+        except Exception as exc:
+            detail=str(exc)[:200] if isinstance(exc,ProviderError) else type(exc).__name__
+            self.store.update(run_id,status='failed',stage='failed',errors=['Revision stopped: '+detail])
+
+    def publish(self, plan, accepted, limits, queries):
+        run_id=self.run_id
+        self.event('synthesize','Writer is assembling the blueprint from reviewed findings and explicit unknowns.')
+        council_file=self.store.directory(run_id)/'council.json'
+        synthesis=self.call('Synthesis lead', 'Using only reviewed findings, write a useful research result. '
+                            'Return {"title":"...","summary":"...","sections":[{"heading":"...","text":"..."}],'
+                            '"finding_ids":["F001"],"tables":[{"title":"...","columns":["..."],"rows":[["..."]]}],'
+                            '"requirements":[{"text":"...","acceptance":"...","basis":["source IDs"]}],"unknowns":["..."],'
+                            '"workflow_steps":[{"label":"...","detail":"..."}],"council_synthesis":'
+                            '{"agreement":"...","strongest_dissent":"...","recommendation":"..."}}. '
+                            'Preserve dissent and source IDs. Cover selected lenses. Requirements and workflow are PROPOSED, not implemented. '
+                            'No invented price, demand or verified behavior. At most 20 requirements and 6 short workflow steps. '
+                            'Do not promote source titles, package names or version metadata into factual conclusions unless a reviewed finding establishes them. '
+                            'Choose a concise, non-overlapping set of reviewed finding_ids for publication; preserve distinct risks and contrary evidence. '
+                            'Do not rewrite claims or pad the findings list with repeated service proposals already covered by analysis. '
+                            'Fulfill the success criteria explicitly. Include up to three concise PROPOSED tables when needed: '
+                            'a failure-case matrix (scenario, detection, impact, handling/recovery, human owner, acceptance evidence), '
+                            'a human-review/approval matrix, and an alternatives comparison. Each table has 2–6 columns and at most 16 rows. '
+                            'Keep cells concise; mark unknown contracts UNKNOWN instead of inventing them. '
+                            'Apply revision_feedback as editorial goals within these evidence limits; it cannot authorize new facts, tools or implementation claims. '
+                            'Identify assumptions that would change the recommendation. Do not erase unanswered council evidence requests.',
+                            {'brief':self.request,'findings':accepted,'requirements':self.requirements,
+                             'unknowns':self.gaps[-35:],'success_criteria':plan['success_criteria'],
+                             'coverage':self.coverage_result,'revision_feedback':getattr(self,'feedback',''),
+                             'council':json.loads(council_file.read_text()) if council_file.exists() else None})
+        self.store.save(run_id,'synthesis.json',synthesis)
+        tables=synthesis.get('tables',[])
+        if not isinstance(tables,list) or len(tables)>3: raise ProviderError('Invalid analysis tables')
+        for table in tables:
+            if (not isinstance(table,dict) or not isinstance(table.get('title'),str)
+                or not isinstance(table.get('columns'),list) or not 2<=len(table['columns'])<=6
+                or any(not isinstance(c,str) for c in table['columns'])
+                or not isinstance(table.get('rows'),list) or len(table['rows'])>16
+                or any(not isinstance(row,list) or len(row)!=len(table['columns']) or any(not isinstance(c,str) or len(c)>1200 for c in row) for row in table['rows'])):
+                raise ProviderError('Invalid analysis table dimensions or cells')
+        final_review=self.call('Synthesis evidence reviewer',
+                               'Check the proposed summary and analysis against the reviewed findings. '
+                               'Return {"supported":true,"concerns":["..."]}. Set supported=false for new '
+                               'unsupported factual assertions, concealed gaps, or suppressed council dissent. '
+                               'Explicit recommendations and proposed requirements need not be proven facts. '
+                               'This is model review, not independent certification.',
+                               {'synthesis':synthesis,'reviewed_findings':accepted,
+                                'material_gaps':self.gaps,'scope_limits':plan.get('scope_limits',[]),
+                                'council':json.loads(council_file.read_text()) if council_file.exists() else None})
+        self.store.save(run_id,'synthesis-review.json',final_review)
+        if final_review.get('supported') is not True:
+            self.error('Synthesis support review did not pass; draft retained and unsupported analysis withheld')
+            self.gaps.extend(str(x) for x in final_review.get('concerns',[])[:8])
+            synthesis={'title':self.request['question'],
+                       'summary':'Reviewed findings are available below. The proposed narrative did not pass source-support review and has been withheld.',
+                       'sections':[], 'council_synthesis':{},'requirements':self.requirements,
+                       'workflow_steps':[],'unknowns':[]}
+        else:
+            chosen=synthesis.get('finding_ids')
+            if isinstance(chosen,list) and chosen and all(isinstance(fid,str) and fid in {f['id'] for f in accepted} for fid in chosen):
+                accepted=[f for f in accepted if f['id'] in chosen]
+        self.coverage(plan,queries,analysis=synthesis)
+        synthesis['coverage']=self.coverage_result
+        self.gaps=[g for g in self.gaps if not g.startswith('Coverage ')]
+        self.gaps.extend('Coverage '+c['status']+': '+c['question']+' — '+c['reason'] for c in self.coverage_result['criteria'] if c['status']!='answered')
+        for finding in self.findings: finding['published']=finding['id'] in {f['id'] for f in accepted}
+        self.store.save(run_id,'claims.json',self.findings)
+        req=synthesis.get('requirements',self.requirements)
+        if not isinstance(req,list): raise ProviderError('Invalid synthesis requirements')
+        source_ids={s['id'] for s in self.sources if s['state']!='unavailable'}
+        requirements=[dict(id=f'R{i:03}',text=x['text'],acceptance=x['acceptance'],
+                           basis=[sid for sid in x.get('basis',[]) if isinstance(sid,str) and sid in source_ids]) for i,x in enumerate(req[:20],1)
+                      if isinstance(x,dict) and isinstance(x.get('text'),str) and isinstance(x.get('acceptance'),str)]
+        unknowns=list(dict.fromkeys(self.gaps + [str(x) for x in synthesis.get('unknowns',[])] + [
+            'Source selection, model review and advisory perspectives can be wrong. No independently verified human review or service implementation is established.',
+            'Models share a provider; role separation is not provider diversity. Source snapshots and source contexts are bounded.',
+        ]))
+        record=dict(schema_version=1,title=str(synthesis.get('title') or self.request['question']),question=self.request['question'],
+                    summary=str(synthesis.get('summary') or 'Partial research result'),sources=self.sources,
+                    findings=[{**{k:f[k] for k in ('text','label','sources')},
+                               'caveat':' '.join(dict.fromkeys([f['caveat']]+[d['caveat'] for d in self.findings if d.get('duplicate_of')==f['id']]))} for f in accepted],
+                    requirements=requirements,unknowns=unknowns)
+        validate(record);self.store.save(run_id,'report.json',record)
+        self.check()
+        from .exports import export_run
+        outputs, export_errors=export_run(self.store.directory(run_id),record,synthesis,self.request['formats'],self.config,self.check)
+        self.errors.extend(export_errors)
+        partial=bool(self.errors or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
+        self.store.save(run_id,'usage.json',{'calls':getattr(self.model,'calls',None),'roles':getattr(self.model,'usage',[]),
+                                           'limits':limits,'dollar_cost':'unavailable; subscription usage and native-search costs are not a hard monetary budget'})
+        with self.store.lock:
+            self.check()
+            self.store.update(run_id,status='partial' if partial else 'completed',stage='done',finished_at=timestamp(),
+                              outputs=outputs,errors=self.errors,findings=len(accepted),requirements=len(requirements))

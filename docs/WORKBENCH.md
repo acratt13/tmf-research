@@ -77,4 +77,17 @@ Hosted tenancy, automatic database ingestion, private email access, local PDF/do
 
 ## Live verification
 
-See the [actual integrated customer-service run](../examples/council-live/README.md) for generated artifacts, role/search counts, timings, usage, withheld claims and presentation limits. The preceding manual study and Office-only trial are separate examples. The current regression suite has 49 tests, including quote admission, missing/negative reviews, rejected-synthesis fallback, process limits, private-address rejection, cancellation/restart, local request guards and accepted-revision re-export.
+See the [actual integrated customer-service run](../examples/council-live/README.md) for generated artifacts, role/search counts, timings, usage, withheld claims and presentation limits. The preceding manual study and Office-only trial are separate examples. The current regression suite has 54 tests, including quote admission, missing/negative reviews, rejected-synthesis fallback, process limits, private-address rejection, cancellation/restart, local request guards and accepted-revision re-export.
+
+
+## Revise a result without repeating acquisition
+
+Finished runs with an original builder evidence bundle expose **Refine this research**. Give bounded feedback; the app creates a new, separately reviewed revision and retains its parent. It checks the parent bundle, report and source hashes before model calls, preserves source retrieval times and makes no new source requests. A revision uses at most four model calls. Use a new investigation when new evidence is needed.
+
+The CLI equivalent is:
+
+```sh
+python3 -m tmf_research refine PARENT_RUN_ID --feedback "Add explicit failure and human-review matrices" --config runs/local-config.json
+```
+
+The writer receives the full original success criteria and current coverage. Proposed failure, approval and alternatives matrices are retained as structured data in the builder bundle, shown in the reader and exported into the document/workbook. Final question coverage replaces earlier coverage statuses in the published unknowns; earlier assessment records remain in the parent run. Revisions do not certify facts, execute proposed tests or establish current vendor write contracts.
