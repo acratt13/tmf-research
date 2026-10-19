@@ -78,6 +78,7 @@ The validator checks required fields, reference integrity, evidence availability
 
 A lead researcher coordinates bounded specialists for web research, selected documents, REA inspection, evidence review and report assembly. They share a versioned evidence ledger. Presentation adapters produce executive briefs, detailed research, build specifications and diagrams from the same structured record.
 
+- [Open-source Office adapter comparison](docs/OFFICE-ADAPTERS.md)
 - [Research workbench specification](docs/RESEARCH-WORKBENCH-SPEC.md)
 - [Professional services specification](docs/SERVICE-SPEC.md): 14 offer families, delivery requirements, acceptance, support and assurance applicability
 - [Interactive architecture](docs/architecture.html): download and open locally
