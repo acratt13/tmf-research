@@ -30,7 +30,7 @@ def designcraft_script(record, synthesis):
     text([42,25,758,52],'TMF COUNCIL / PROPOSED WORKFLOW',12,'Teal')
     text([42,57,758,130],title,22,'Ink')
     for i,step in enumerate(steps):
-        label=re.sub(r'^\s*\d+[.)]\s*','',str(step.get('label','')));detail=str(step.get('detail',''))
+        label=re.sub(r'^\s*\d+[.)]\s+','',str(step.get('label','')));detail=str(step.get('detail',''))
         if not label or len(label)>110 or len(detail)>420:raise ValueError('Workflow text exceeds template capacity')
         y=145+i*132
         box=add('frame.create',rect=[42,y,758,y+108],content='unassigned')
