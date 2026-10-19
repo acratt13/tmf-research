@@ -1,0 +1,12 @@
+ID,Service,Client outcome,Stage,Acceptance evidence,Dependencies,,,Summary,
+S01,Systems assessment,Identify worthwhile automation,Specified,Client validates evidence and ranked opportunities,Read-only application/data inventory,,,Offers specified,6
+S03,Workflow integration,Connect approved business actions,Specified,"Duplicate, timeout and recovery scenarios pass",Selected APIs and identity scopes,,,Specified stage,6
+S04,Customer service,Route requests with human takeover,Specified,Case context survives escalation and tool failure,"Support CRM, channels and knowledge",,,Client accepted,0
+S05,Revenue operations,Connect invoicing and payments,Specified,Partial payments and credits reconcile without duplicates,Accounting and payment providers,,,,
+S06,Ecommerce operations,Connect orders and fulfillment,Specified,"Inventory, partial fulfillment and refunds reconcile","Storefront, stock and shipping systems",,,,
+S08,Payroll operations,Move approved inputs through provider workflow,Specified,"Responsible owner reconciles run, payment and filing outcomes",Jurisdiction-specific payroll provider,,,,
+,,,,,,,,,
+Specification source,https://github.com/acratt13/tmf-research/blob/47b77af/docs/SERVICE-SPEC.md,,,,,,,,
+,,,,,,,,,
+Pilot artifacts generated; client acceptance pending.,,,,,,,,,
+,,,,,,,,,

@@ -35,6 +35,12 @@ python -m tmf_research render examples/report.json --format pdf --output runs/re
 
 Use `--audience executive` for a shorter view. Caveats, unknowns and the evidence register remain in both views. PDF currently uses ReportLab's default core fonts; complex-script/complete Unicode typography is not established.
 
+## Actual Office-engine trial
+
+WordCraft, GridCraft and DeckCraft v0.8.0 created, reopened, edited and exported an original service-readiness briefing. [See the trial and download DOCX/XLSX/PPTX/PDF outputs](docs/CRAFT-TRIAL.md). This is a reproducible local engine test, not an implemented autonomous research pipeline.
+
+![DeckCraft-generated briefing](examples/craft-trial/presentation-preview.png)
+
 ## Real REA integration
 
 [REA](https://github.com/morluto/rea) is an independent open-source reverse-engineering project. Install/build it using its own instructions. TMF Research calls the actual CLI and retains its evidence envelope; it does not replace the engine.
@@ -69,7 +75,7 @@ Import deliberately starts with **zero asserted findings** and partial/unreviewe
 | Planner, researcher, reviewer and writer agent team | Specified; not implemented |
 | Iterative web search/fetch and source comparison | Specified; not implemented |
 | Archify runtime/export adapter | Not implemented; current diagram was authored separately |
-| Editable document/deck/sheet/design adapters | Not implemented; candidate editors need inventory and roundtrip proof |
+| WordCraft / GridCraft / DeckCraft outputs | Reproducible local CLI trial passed; integrated runtime adapters and native GUI still unimplemented/untested |
 | GUI, hosted multi-client service and automatic KB ingestion | Not implemented |
 
 The validator checks required fields, reference integrity, evidence availability and visible partial-source caveats. **It cannot establish whether a claim is true or entailed by a source.**
@@ -78,6 +84,7 @@ The validator checks required fields, reference integrity, evidence availability
 
 A lead researcher coordinates bounded specialists for web research, selected documents, REA inspection, evidence review and report assembly. They share a versioned evidence ledger. Presentation adapters produce executive briefs, detailed research, build specifications and diagrams from the same structured record.
 
+- [Actual Craft trial and editable output files](docs/CRAFT-TRIAL.md)
 - [Open-source Office adapter comparison](docs/OFFICE-ADAPTERS.md)
 - [Research workbench specification](docs/RESEARCH-WORKBENCH-SPEC.md)
 - [Professional services specification](docs/SERVICE-SPEC.md): 14 offer families, delivery requirements, acceptance, support and assurance applicability

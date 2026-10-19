@@ -1,0 +1,67 @@
+{
+  "versions": {
+    "wordcraft": "0.8.0",
+    "gridcraft": "0.8.0",
+    "deckcraft": "0.8.0"
+  },
+  "trial": {
+    "scope": "Local CLI create/reopen/edit/export trial; no native GUI or production integration proof",
+    "apps": {
+      "wordcraft": {
+        "status": "passed",
+        "checks": [
+          "create DOCX",
+          "reopen and edit",
+          "saved text and source readback",
+          "PDF export",
+          "page PNG render",
+          "independent DOCX XML readback"
+        ]
+      },
+      "gridcraft": {
+        "status": "passed",
+        "checks": [
+          "create styled XLSX table",
+          "reopen and edit",
+          "formula readback 6/6/0",
+          "HTML and CSV exports",
+          "GridCraft roundtrip check",
+          "independent CSV readback"
+        ]
+      },
+      "deckcraft": {
+        "status": "passed",
+        "checks": [
+          "create six-slide PPTX",
+          "reopen and edit notes",
+          "independent PPTX and notes XML readback",
+          "PDF and Markdown export",
+          "slide PNG rendering"
+        ]
+      }
+    }
+  },
+  "publisher_sha256": {
+    "wordcraft": "931f2277a357e7d77266ddceea565450b102ca7bf9e0634821162f7bab616dbe",
+    "gridcraft": "564f7d087b880b7f16aa60ae50a1cbe9d37b4ed449eb29b2646ea584479bab07",
+    "deckcraft": "1093646863b659c0a40d919cb898d9d7c7a4710e488b4207540d17887e187ed0"
+  },
+  "outputs": {
+    "briefing.docx": "8fc2a11e8aec8a8efda39aef4a536a8455556ff62b896d2d779db166fd0ec789",
+    "briefing.pdf": "f9f21b484a6f582dd0245ac9e09cf3e419df5996f5e6a88e1690bbbba64fa7b9",
+    "service-readiness.xlsx": "4a1624966a8f356ae419d9aeaf21da3a9ca0b416a17853006ac72ec9a294807d",
+    "service-readiness.csv": "3848cf73e5c8633ae5c9fcdd0a8dc0a5c516874406564be3638d01c909ba8595",
+    "briefing.pptx": "a7c26a479f0bbd51a33af33921ddb8fe957fdb14c9107895872c9d0ccb82c557",
+    "slides.pdf": "4d123d0a1db93fb433cfc9aa58bdaf46095371d6e062b8ecd83c63f562b7d6dc",
+    "slides.md": "94d7490f1d179a4a3741cb3b0647a376b5a1a169249dd782eb023600d28939a4"
+  },
+  "visual_review": "WordCraft first page and DeckCraft slides 1 and 6 visually reviewed. GridCraft HTML export viewed; data retained, styling absent.",
+  "not_tested": [
+    "Native editor UI",
+    "Microsoft Office interoperability",
+    "Complex legacy documents/workbooks/decks",
+    "Hosted editor adapters",
+    "Agent MCP sessions",
+    "Full research orchestration"
+  ]
+}

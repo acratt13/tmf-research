@@ -11,7 +11,7 @@ Researched 2026-10-19. Documentation comparison only; no editor integration or i
 
 ## Primary Office candidates — clarified by the project owner
 
-The intended suite is **WordCraft, GridCraft and DeckCraft**, from the ArtCraft team. The alternatives above remain fallback/comparison options rather than the primary direction. Official repository documentation was checked on 2026-10-19; runtime behavior has not been tested here.
+The intended suite is **WordCraft, GridCraft and DeckCraft**, from the ArtCraft team. The alternatives above remain fallback/comparison options rather than the primary direction. Official repository documentation was checked on 2026-10-19; the subsequent [v0.8.0 CLI trial](CRAFT-TRIAL.md) now establishes bounded create/reopen/edit/export behavior. Native GUI and integrated runtime adapters remain untested.
 
 | Application | Research deliverable | Upstream-documented capabilities |
 | --- | --- | --- |
@@ -37,4 +37,4 @@ This choice does not replace Archify: diagrams remain their own renderer, with e
 6. Re-import where promised and compare semantics; never promise perfect Microsoft fidelity from a feature list.
 7. Verify isolation, temporary-file cleanup, provider dependencies, resource use and redistribution obligations for the target deployment.
 
-No candidate is currently wired into the TMF Research runtime. The existing Markdown/HTML/PDF core and separately generated Archify design are the implemented outputs.
+The [Craft CLI trial](CRAFT-TRIAL.md) now generates DOCX/XLSX/PPTX and exports through actual upstream engines. These are reproducible standalone steps; no candidate is yet wired into an autonomous research runtime.
