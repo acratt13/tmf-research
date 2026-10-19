@@ -23,7 +23,7 @@ LENSES = {
     'offer': 'Assess buyer evidence, scope, costs, support and commercial unknowns; do not invent demand or prices.',
 }
 FORMATS = ('md', 'html', 'pdf', 'docx', 'xlsx', 'pptx', 'diagram', 'builder')
-DEPTHS = {'quick': {'sources': 4, 'rounds': 0, 'calls': 14},
+DEPTHS = {'quick': {'sources': 4, 'rounds': 0, 'calls': 16},
           'detailed': {'sources': 8, 'rounds': 1, 'calls': 24},
           'deep': {'sources': 12, 'rounds': 2, 'calls': 32}}
 PRESETS = {'tmf-service-blueprint': {'lenses': list(LENSES), 'depth': 'deep',
@@ -37,6 +37,21 @@ COUNCIL = [
 
 
 def timestamp(): return datetime.now(timezone.utc).isoformat()
+
+
+def source_passages(text, query, budget=16000):
+    """Select located windows across a snapshot instead of dropping its tail."""
+    if len(text) <= budget: return text
+    ignored={'what','must','with','from','that','this','which','their','should','include','using','into','before','after','does','research','service','proposed'}
+    terms={w for w in re.findall(r'[a-z]{4,}',query.lower()) if w not in ignored}
+    windows=[(i,text[i:i+1400]) for i in range(0,len(text),1200)]
+    ranked=sorted(windows,key=lambda row:(-sum(t in row[1].lower() for t in terms),row[0]))
+    selected={0:windows[0][1]};used=len(windows[0][1])+80
+    for offset,window in ranked:
+        if offset in selected: continue
+        if used+len(window)+80>budget: continue
+        selected[offset]=window;used+=len(window)+80
+    return '\n\n'.join(f'[Snapshot characters {offset}:{offset+len(window)}]\n{window}' for offset,window in sorted(selected.items()))
 
 
 def brief(value):
@@ -121,7 +136,8 @@ class ResearchEngine:
         if isinstance(data,dict) and isinstance(data.get('evidence'),list):
             # Keep later rounds bounded as the source ledger grows.
             packets=data['evidence'];per_source=min(16000,100000//max(1,len(packets)))
-            data={**data,'evidence':[{**p,'text':p['text'][:per_source]} for p in packets]}
+            query=json.dumps({'brief':data.get('brief',{}),'task':data.get('task',{})},ensure_ascii=False)
+            data={**data,'evidence':[{**p,'text':source_passages(p['text'],query,per_source)} for p in packets]}
         entry={'id':uuid.uuid4().hex,'role':role,'started_at':timestamp(),'status':'running','search_enabled':search}
         with self.role_lock:
             self.role_calls.append(entry);self.store.save(self.run_id,'role-calls.json',self.role_calls)
@@ -141,12 +157,19 @@ class ResearchEngine:
     def search(self, queries):
         self.event('search', 'Source scout is searching for primary sources; search results are leads only.')
         result = self.call('Source scout', 'Use native web search for these bounded queries. Prefer official primary sources. '
-                           'Return {"sources":[{"url":"https://...","title":"..."}],"limitations":["..."]}. '
-                           'At most 8 relevant sources; do not claim a page was read merely because it appeared in search.', {'queries': queries}, search=True)
+                           'Return {"sources":[{"url":"https://...","title":"...","access":"readable|unverified|unavailable"}],"limitations":["..."]}. '
+                           'At most 8 relevant sources. Order for breadth: interleave the distinct questions and vendors; '
+                           'do not spend the shortlist on one subtopic. Prefer directly readable official documentation or '
+                           'official Markdown/static equivalents when a previous URL failed. If the reference is an application shell, '
+                           'seek official SDK documentation, schemas or examples, labeling their version/scope limits. '
+                           'Mark pages you opened but could not read as unavailable; do not displace readable sources with known shells. '
+                           'Search snippets are leads, not evidence.',
+                           {'queries': queries,'brief':self.request,'unavailable_urls':[s['url'] for s in self.sources if s['state']=='unavailable']}, search=True)
         self.store.save(self.run_id, f'search-{self.round}.json', result)
         candidates = result.get('sources', [])
         if not isinstance(candidates, list): raise ProviderError('Invalid source-scout response')
-        return [x for x in candidates[:8] if isinstance(x, dict) and isinstance(x.get('url'), str)]
+        usable=[x for x in candidates[:8] if isinstance(x, dict) and isinstance(x.get('url'), str) and x.get('access')!='unavailable']
+        return sorted(usable,key=lambda x:x.get('access')!='readable')
     def fetch(self, candidates, limit):
         seen = {s.get('url') for s in self.sources}
         for candidate in candidates:
@@ -170,7 +193,7 @@ class ResearchEngine:
                 (directory / (sid + '.body')).write_bytes(result['raw'])
                 (directory / (sid + '.txt')).write_text(result['text'])
                 self.packets.append({'id': sid, 'title': source['title'], 'url': url,
-                                     'text': result['text'][:16000], 'state': source['state']})
+                                     'text': result['text'], 'state': source['state']})
             except (OSError, ValueError, ProviderError) as exc:
                 source.update(state='unavailable', limitations=f'Fetch failed ({type(exc).__name__}); no claim support.')
                 self.error(f'{sid}: source unavailable; see source register')
@@ -277,21 +300,69 @@ class ResearchEngine:
                     contexts.append({'finding':finding['id'],'source':sid,'text':packet['text'][max(0,pos-1000):pos+len(quote)+2000]})
         result = self.call('Evidence reviewer', 'Independently check each supplied finding against original passage context. '
                            'Return {"reviews":[{"id":"F001","verdict":"supported|unsupported|uncertain|proposal",'
-                           '"reason":"..."}],"follow_up_queries":["..."]}. '
+                           '"reason":"...","requires_revision":false}],"duplicate_groups":[{"keep":"F001","duplicates":["F002"],"reason":"..."}],"follow_up_queries":["..."]}. '
                            'A matching quote does not guarantee entailment. Reject overreach, wrong scope, stale versions or runtime claims from static facts. '
+                           'Judge the entire exact claim and label, not just its useful core. If any qualification or change is needed, '
+                           'set requires_revision=true and verdict=uncertain; your reason is not a correction to the published claim. '
+                           'Group only semantically equivalent accepted claims; keep the most complete supported wording. Do not merge distinct facts. '
                            'Proposed designs are proposals, never verified facts. No majority vote can establish truth.',
-                           {'findings':pending,'source_contexts':contexts})
+                           {'findings':pending,'previously_reviewed':[f for f in self.findings if f['review'] in ('supported','proposal')],'source_contexts':contexts})
         self.store.save(self.run_id, f'review-{self.round}.json', result)
         by_id = {x.get('id'):x for x in result.get('reviews',[]) if isinstance(x,dict)}
         for finding in pending:
             decision = by_id.get(finding['id'], {})
             verdict = decision.get('verdict', 'uncertain')
             if verdict not in ('supported','unsupported','uncertain','proposal'): verdict='uncertain'
+            if verdict=='supported' and decision.get('requires_revision') is not False: verdict='uncertain'
             if finding['label']=='proposed': verdict='proposal'
             elif verdict=='proposal': verdict='uncertain'
             finding['review']=verdict; finding['review_reason']=str(decision.get('reason','Reviewer returned no decision'))
+        self.consolidate(result.get('duplicate_groups',[]))
         self.gaps.extend('Review gap: '+f['text'] for f in pending if f['review'] in ('unsupported','uncertain'))
         return result.get('follow_up_queries', [])[:2]
+    def consolidate(self, groups):
+        by_id={f['id']:f for f in self.findings}
+        for group in groups if isinstance(groups,list) else []:
+            if not isinstance(group,dict): continue
+            keep=by_id.get(group.get('keep'))
+            if not keep or keep['review'] not in ('supported','proposal') or keep.get('duplicate_of'): continue
+            for fid in group.get('duplicates',[]) if isinstance(group.get('duplicates'),list) else []:
+                other=by_id.get(fid)
+                if not other or other is keep or other.get('duplicate_of') or other['review']!=keep['review'] or other['label']!=keep['label']: continue
+                if any(f.get('duplicate_of')==other['id'] for f in self.findings): continue
+                if other['label']!='proposed' and not set(other['sources']) & set(keep['sources']): continue
+                other['duplicate_of']=keep['id'];other['consolidation_reason']=str(group.get('reason','Equivalent reviewed claim'))
+    def accepted(self):
+        return [f for f in self.findings if f['review'] in ('supported','proposal') and not f.get('duplicate_of')]
+    def coverage(self, plan, queries, analysis=None):
+        self.event('coverage','Research lead is checking the original goals and prioritizing missing evidence.')
+        council=self.store.directory(self.run_id)/'council.json'
+        result=self.call('Research coverage lead',
+            'Assess coverage of EVERY supplied success criterion, preserving its index. Return '
+            '{"criteria":[{"index":0,"status":"answered|partial|unanswered","finding_ids":["F001"],"reason":"..."}],'
+            '"follow_up_queries":["..."]}. At most 3 prioritized, concrete public-documentation queries. '
+            'A proposed requirement to research something is NOT an answer. General controls do not establish domain semantics. '
+            'Prioritize missing evidence central to the user decision over narrow disputes or repeated facts. '
+            'Customer interviews and private runtime tests cannot be resolved by web search; keep them explicit, '
+            'but pursue answerable official documentation questions. Use failed URLs to seek readable official alternatives. '
+            'Coverage is a model assessment, not factual certification. Do not mark answered without reviewed finding IDs.',
+            {'brief':self.request,'success_criteria':plan['success_criteria'],'findings':self.accepted(),
+             'council':json.loads(council.read_text()) if council.exists() else None,
+             'objections':queries,'sources':self.sources,'requirements':self.requirements,'accepted_analysis':analysis})
+        rows={}
+        for row in result.get('criteria',[]) if isinstance(result.get('criteria'),list) else []:
+            if isinstance(row,dict) and type(row.get('index')) is int: rows[row['index']]=row
+        accepted_ids={f['id'] for f in self.accepted()};criteria=[]
+        for i,question in enumerate(plan['success_criteria']):
+            row=rows.get(i,{});refs=[fid for fid in row.get('finding_ids',[]) if isinstance(fid,str) and fid in accepted_ids] if isinstance(row.get('finding_ids'),list) else []
+            state=row.get('status','unanswered')
+            if state not in ('answered','partial','unanswered') or (state=='answered' and not refs): state='unanswered'
+            criteria.append({'index':i,'question':question,'status':state,'finding_ids':refs,'reason':str(row.get('reason','No coverage decision returned'))[:1200]})
+        self.coverage_result={'kind':'Model-assessed question coverage, not certification','criteria':criteria}
+        self.store.save(self.run_id,'coverage-final.json' if analysis is not None else f'coverage-{self.round}.json',self.coverage_result)
+        self.store.save(self.run_id,'coverage.json',self.coverage_result)
+        queries=result.get('follow_up_queries',[])
+        return [q[:500] for q in queries if isinstance(q,str) and q.strip()][:3] if isinstance(queries,list) else []
     def council(self, experts):
         self.event('council', 'TMF Council is challenging usefulness, feasibility, costs and assumptions.')
         roles = COUNCIL + [(str(x.get('role','Domain specialist'))[:80],str(x.get('lens','Subject-specific gaps'))[:300]) for x in experts[:2] if isinstance(x,dict)]
@@ -325,6 +396,9 @@ class ResearchEngine:
                            '"success_criteria":["..."],"scope_limits":["..."]}. At most 3 queries, 3 tasks and 2 domain experts. '
                            'Cover every selected lens in the three tasks. Experts are functional perspectives, not invented credentials.',
                            {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']}})
+            criteria=plan.get('success_criteria',[])
+            plan['success_criteria']=[str(c)[:1000] for c in criteria[:8] if isinstance(c,str) and c.strip()] if isinstance(criteria,list) else []
+            if not plan['success_criteria']: plan['success_criteria']=[self.request['question']]
             self.store.save(run_id,'plan.json',plan)
             self.gaps.extend('Lead scope limit: '+str(x)[:500] for x in plan.get('scope_limits',[])[:8])
             tasks=plan.get('tasks',[])
@@ -338,7 +412,7 @@ class ResearchEngine:
             self.investigate(tasks)
             follow=self.review() or []
             positions_queries=self.council(plan.get('experts',[])) if self.request['council'] else []
-            queries=list(dict.fromkeys(follow+positions_queries))[:2]
+            queries=self.coverage(plan,follow+positions_queries)
             for n in range(limits['rounds']):
                 if not queries: break
                 self.round=n+1
@@ -348,8 +422,10 @@ class ResearchEngine:
                 if len(self.packets)==before:
                     self.gaps.append('Follow-up acquired no new readable evidence within the source budget.'); break
                 self.investigate([{'role':'Follow-up investigator','question':'Resolve these objections: '+'; '.join(queries)}])
-                queries=self.review() or []
-            accepted=[f for f in self.findings if f['review'] in ('supported','proposal')]
+                review_queries=self.review() or []
+                queries=self.coverage(plan,review_queries)
+            accepted=self.accepted()
+            self.gaps.extend('Coverage '+c['status']+': '+c['question']+' — '+c['reason'] for c in self.coverage_result['criteria'] if c['status']!='answered')
             self.gaps.extend('Unresolved follow-up query: '+str(q) for q in queries)
             self.store.save(run_id,'claims.json',self.findings)
             if not accepted: raise ProviderError('No findings survived evidence review')
@@ -357,12 +433,15 @@ class ResearchEngine:
             council_file=self.store.directory(run_id)/'council.json'
             synthesis=self.call('Synthesis lead', 'Using only reviewed findings, write a useful research result. '
                                 'Return {"title":"...","summary":"...","sections":[{"heading":"...","text":"..."}],'
+                                '"finding_ids":["F001"],'
                                 '"requirements":[{"text":"...","acceptance":"...","basis":["source IDs"]}],"unknowns":["..."],'
                                 '"workflow_steps":[{"label":"...","detail":"..."}],"council_synthesis":'
                                 '{"agreement":"...","strongest_dissent":"...","recommendation":"..."}}. '
                                 'Preserve dissent and source IDs. Cover selected lenses. Requirements and workflow are PROPOSED, not implemented. '
                                 'No invented price, demand or verified behavior. At most 20 requirements and 6 short workflow steps. '
                                 'Do not promote source titles, package names or version metadata into factual conclusions unless a reviewed finding establishes them. '
+                                'Choose a concise, non-overlapping set of reviewed finding_ids for publication; preserve distinct risks and contrary evidence. '
+                                'Do not rewrite claims or pad the findings list with repeated service proposals already covered by analysis. '
                                 'Identify assumptions that would change the recommendation. Do not erase unanswered council evidence requests.',
                                 {'brief':self.request,'findings':accepted,'requirements':self.requirements,
                                  'unknowns':self.gaps[:35], 'council':json.loads(council_file.read_text()) if council_file.exists() else None})
@@ -384,6 +463,14 @@ class ResearchEngine:
                            'summary':'Reviewed findings are available below. The proposed narrative did not pass source-support review and has been withheld.',
                            'sections':[], 'council_synthesis':{},'requirements':self.requirements,
                            'workflow_steps':[],'unknowns':[]}
+            else:
+                chosen=synthesis.get('finding_ids')
+                if isinstance(chosen,list) and chosen and all(isinstance(fid,str) and fid in {f['id'] for f in accepted} for fid in chosen):
+                    accepted=[f for f in accepted if f['id'] in chosen]
+            self.coverage(plan,queries,analysis=synthesis)
+            synthesis['coverage']=self.coverage_result
+            for finding in self.findings: finding['published']=finding['id'] in {f['id'] for f in accepted}
+            self.store.save(run_id,'claims.json',self.findings)
             req=synthesis.get('requirements',self.requirements)
             if not isinstance(req,list): raise ProviderError('Invalid synthesis requirements')
             source_ids={s['id'] for s in self.sources if s['state']!='unavailable'}
@@ -396,14 +483,15 @@ class ResearchEngine:
             ]))
             record=dict(schema_version=1,title=str(synthesis.get('title') or self.request['question']),question=self.request['question'],
                         summary=str(synthesis.get('summary') or 'Partial research result'),sources=self.sources,
-                        findings=[{k:f[k] for k in ('text','label','sources','caveat')} for f in accepted],
+                        findings=[{**{k:f[k] for k in ('text','label','sources')},
+                                   'caveat':' '.join(dict.fromkeys([f['caveat']]+[d['caveat'] for d in self.findings if d.get('duplicate_of')==f['id']]))} for f in accepted],
                         requirements=requirements,unknowns=unknowns)
             validate(record);self.store.save(run_id,'report.json',record)
             self.check()
             from .exports import export_run
             outputs, export_errors=export_run(self.store.directory(run_id),record,synthesis,self.request['formats'],self.config,self.check)
             self.errors.extend(export_errors)
-            partial=bool(self.errors or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements)
+            partial=bool(self.errors or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
             self.store.save(run_id,'usage.json',{'calls':getattr(self.model,'calls',None),'roles':getattr(self.model,'usage',[]),
                                                'limits':limits,'dollar_cost':'unavailable; subscription usage and native-search costs are not a hard monetary budget'})
             with self.store.lock:

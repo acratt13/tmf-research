@@ -29,9 +29,17 @@ async function showResult(id){
   const report=result.report,article=element('article',undefined,'research-report');
   article.append(element('div','RESEARCH BRIEF','eyebrow'),element('h1',report.title),element('p','The conclusion','section-label'),element('p',report.summary,'conclusion'));
   const nav=element('nav',undefined,'report-nav');nav.setAttribute('aria-label','Research sections');
-  for(const [anchor,label] of [['findings','Findings'],['requirements','Build plan'],['unknowns','Open questions'],['evidence','Evidence']]){const a=element('a',label);a.href='#research-'+anchor;nav.append(a)}article.append(nav);
+  for(const [anchor,label] of [['analysis','Analysis'],['coverage','Question coverage'],['findings','Findings'],['requirements','Build plan'],['unknowns','Open questions'],['evidence','Evidence']]){const a=element('a',label);a.href='#research-'+anchor;nav.append(a)}article.append(nav);
   function section(anchor,title,note){const section=element('section',undefined,'report-section');section.id='research-'+anchor;section.append(element('h2',title));if(note)section.append(element('p',note,'section-note'));article.append(section);return section}
   function citations(ids){const row=element('div',undefined,'citations');for(const id of ids||[]){const a=element('a',id);a.href='#source-'+id;a.setAttribute('aria-label','Read evidence '+id);row.append(a)}return row}
+  const analysis=section('analysis','Analysis and proposed approach','Accepted analysis from the same revision used for exports. Recommendations remain proposals.');
+  for(const item of result.analysis?.sections||[])analysis.append(element('h3',item.heading),element('p',item.text));
+  if(!result.analysis?.sections?.length)analysis.append(element('p','No accepted analysis sections are available for this revision.'));
+  const decision=result.analysis?.council_synthesis;
+  if(decision?.strongest_dissent)analysis.append(element('h3','Strongest dissent'),element('p',decision.strongest_dissent));
+  const coverage=section('coverage','How well the question was answered','Model-assessed coverage against the original goals; not factual certification.');
+  for(const item of result.analysis?.coverage?.criteria||[]){const row=element('div',undefined,'coverage-item');row.append(element('span',item.status,'evidence-label'),element('h3',item.question),element('p',item.reason));coverage.append(row)}
+  if(!result.analysis?.coverage?.criteria?.length)coverage.append(element('p','This older investigation has no explicit question-coverage assessment.'));
   const findings=section('findings','What the research found',report.findings.length+' accepted findings. Labels distinguish documented facts, observations, inferences and proposals.');
   for(const [index,finding] of report.findings.entries()){
    const card=element('div',undefined,'finding');card.append(element('span',String(index+1).padStart(2,'0'),'finding-number'));

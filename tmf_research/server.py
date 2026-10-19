@@ -48,7 +48,9 @@ def serve(root, config=None, port=8765):
                     run_id=path.rsplit('/',1)[1];directory=store.directory(run_id)
                     report=json.loads((directory/'report.json').read_text())
                     council=directory/'council.json'
-                    self.reply(200,{'report':report,'council':json.loads(council.read_text()) if council.exists() else None});return
+                    published=directory/'published-analysis.json'
+                    self.reply(200,{'report':report,'council':json.loads(council.read_text()) if council.exists() else None,
+                                    'analysis':json.loads(published.read_text()) if published.exists() else None});return
                 if path.startswith('/api/runs/'):
                     run_id=path.rsplit('/',1)[1]
                     request=json.loads((store.directory(run_id)/'brief.json').read_text())
@@ -127,6 +129,7 @@ def serve(root, config=None, port=8765):
                                 claims_file=directory/'claims.json'
                                 research_partial=(any(c.get('review') not in ('supported','proposal') for c in json.loads(claims_file.read_text()))
                                                   if claims_file.exists() else prior['status']=='partial')
+                                research_partial=research_partial or any(c.get('status')!='answered' for c in analysis.get('coverage',{}).get('criteria',[]))
                                 store.update(run_id,status='partial' if errors or remaining or research_partial else 'completed',stage='done',
                                              outputs=prior['outputs']+names,errors=list(dict.fromkeys(remaining+errors)),
                                              error_history=prior.get('error_history',[])+[{'error':message,'resolved_by_export':revision} for message in resolved])

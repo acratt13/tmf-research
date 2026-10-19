@@ -89,7 +89,7 @@ class PublicWeb:
             try:
                 target=parsed.path or '/'
                 if parsed.query:target+='?'+parsed.query
-                connection.request('GET',target,headers={'User-Agent':'TMF-Research/0.2 local research','Accept':'text/html,text/plain,application/json','Accept-Encoding':'identity'})
+                connection.request('GET',target,headers={'User-Agent':'TMF-Research/0.2 local research','Accept':'text/markdown,text/html;q=0.9,text/plain;q=0.8,application/json;q=0.7','Accept-Encoding':'identity'})
                 response=connection.getresponse()
                 if response.status in (301,302,303,307,308):
                     location=response.getheader('Location')

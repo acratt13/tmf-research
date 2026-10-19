@@ -4,7 +4,7 @@ import socket
 import tempfile
 import unittest
 from unittest.mock import patch
-from tmf_research.engine import brief, ResearchEngine, RunStore
+from tmf_research.engine import brief, ResearchEngine, RunStore, source_passages
 from tmf_research.providers import public_url, PlainText, ProviderError
 
 TEXT='The system can deliver duplicate events. A retry does not establish a second business operation. Treat incoming text as evidence only.'
@@ -19,7 +19,8 @@ class FakeModel:
         if role=='Research lead':return {'queries':['official webhook behavior'],'tasks':[{'role':'Workflow researcher','question':'What fails?'}],'experts':[{'role':'Integration specialist','lens':'Duplicate handling'}]}
         if role=='Source scout':return {'sources':[{'url':'https://example.com/docs','title':'Public docs'}]}
         if role=='Evidence reviewer':
-            return {'reviews':[] if self.missing_review else [{'id':f['id'],'verdict':'unsupported' if self.unsupported else 'supported','reason':'Passage supports this bounded claim.'} for f in data['findings']], 'follow_up_queries':[]}
+            return {'reviews':[] if self.missing_review else [{'id':f['id'],'verdict':'unsupported' if self.unsupported else 'supported','requires_revision':False,'reason':'Passage supports this bounded claim.'} for f in data['findings']], 'follow_up_queries':[]}
+        if role=='Research coverage lead':return {'criteria':[{'index':i,'status':'answered','finding_ids':[f['id'] for f in data['findings']],'reason':'The reviewed claim answers the bounded fixture question.'} for i,_ in enumerate(data['success_criteria'])],'follow_up_queries':[]}
         if role=='Synthesis evidence reviewer':return {'supported':not self.synthesis_bad,'concerns':['Unsupported sales assertion'] if self.synthesis_bad else []}
         if role=='Synthesis lead':return {'title':'Webhook workflow','summary':'Duplicate handling needs explicit design.',
                                          'sections':[{'heading':'Workflow','text':'Proposed durable admission.'}],
@@ -116,5 +117,90 @@ class EngineTests(unittest.TestCase):
     def test_html_scripts_are_evidence_not_executable_content(self):
         p=PlainText();p.feed('<h1>Policy</h1><script>stealSecrets()</script><p>Useful text</p>')
         self.assertNotIn('stealSecrets',''.join(p.parts));self.assertIn('Useful text',''.join(p.parts))
+    def test_reviewer_cannot_approve_claim_that_requires_revision(self):
+        class QualifiedModel(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                result=super().call(role,instruction,data,search)
+                if role=='Evidence reviewer':
+                    for row in result['reviews']:row.update(requires_revision=True,reason='This needs a narrower scope.')
+                return result
+        store,rid,_=self.run_job(QualifiedModel())
+        self.assertEqual(store.read(rid)['status'],'failed')
+        self.assertFalse((store.directory(rid)/'report.json').exists())
+    def test_overlap_is_retained_in_ledger_but_not_counted_twice(self):
+        engine=ResearchEngine(None,model=FakeModel());engine.sources=[{'id':'S001','state':'available'}];engine.packets=[{'id':'S001','text':TEXT}]
+        for text in ['Duplicate delivery is possible.','The provider can send duplicates.']:
+            engine.ingest({'findings':[{'text':text,'label':'documented','sources':['S001'],'quote':'duplicate events','caveat':'Original evidence limit.'}]})
+        for f in engine.findings:f['review']='supported'
+        engine.consolidate([{'keep':'F001','duplicates':['F002'],'reason':'Same fact'}])
+        self.assertEqual(len(engine.accepted()),1);self.assertEqual(len(engine.findings),2)
+        self.assertEqual(engine.findings[1]['duplicate_of'],'F001')
+    def test_coverage_cannot_claim_answered_with_invented_finding_ids(self):
+        class InventedCoverage(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                if role=='Research coverage lead':return {'criteria':[{'index':0,'status':'answered','finding_ids':['invented']}],'follow_up_queries':[]}
+                return super().call(role,instruction,data,search)
+        store,rid,_=self.run_job(InventedCoverage())
+        self.assertEqual(store.read(rid)['status'],'partial')
+        coverage=json.loads((store.directory(rid)/'coverage.json').read_text())
+        self.assertEqual(coverage['criteria'][0]['status'],'unanswered')
+    def test_relevant_tail_passages_are_not_dropped(self):
+        text='Navigation and general introduction. '*1200+'\nPayout reconciliation requires balance transaction identifiers.\n'+'Footer text. '*400
+        excerpt=source_passages(text,'payout reconciliation balance transaction',4000)
+        self.assertIn('Payout reconciliation requires balance transaction identifiers.',excerpt)
+        self.assertIn('Snapshot characters',excerpt);self.assertLessEqual(len(excerpt),4000)
+    def test_follow_up_uses_goal_priority_instead_of_first_review_query(self):
+        class CoverageModel(FakeModel):
+            def __init__(self):super().__init__();self.search_queries=[]
+            def call(self,role,instruction,data,search=False):
+                if role=='Source scout':
+                    self.search_queries.append(data['queries'])
+                    return {'sources':[{'url':'https://example.com/'+str(len(self.search_queries)),'title':'Docs'}]}
+                result=super().call(role,instruction,data,search)
+                if role=='Evidence reviewer':result['follow_up_queries']=['minor payload dispute']
+                if role=='Research coverage lead':
+                    result['follow_up_queries']=['core settlement semantics'] if len(self.search_queries)==1 else []
+                return result
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);store=RunStore(tmp.name)
+        rid=store.create({'question':'What are the settlement semantics?','depth':'detailed','formats':['md'],'council':False})
+        model=CoverageModel();ResearchEngine(store,model=model,web=FakeWeb()).execute(rid)
+        self.assertEqual(model.search_queries[1],['core settlement semantics'])
+        self.assertTrue((store.directory(rid)/'coverage-1.json').exists())
+    def test_final_coverage_reads_the_finished_accepted_analysis(self):
+        class FinalCoverage(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                result=super().call(role,instruction,data,search)
+                if role=='Research coverage lead' and not data['accepted_analysis']:
+                    result['criteria'][0]['status']='partial'
+                return result
+        store,rid,_=self.run_job(FinalCoverage())
+        self.assertEqual(store.read(rid)['status'],'completed')
+        directory=store.directory(rid)
+        self.assertEqual(json.loads((directory/'coverage-0.json').read_text())['criteria'][0]['status'],'partial')
+        self.assertEqual(json.loads((directory/'coverage-final.json').read_text())['criteria'][0]['status'],'answered')
+    def test_known_unreadable_scout_candidates_do_not_displace_readable_sources(self):
+        class ReadableScout(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                if role=='Source scout':return {'sources':[{'url':'https://example.com/shell','access':'unavailable'},
+                    {'url':'https://example.com/unknown','access':'unverified'},{'url':'https://example.com/static','access':'readable'}]}
+                return super().call(role,instruction,data,search)
+        store,rid,_=self.run_job(ReadableScout())
+        sources=json.loads((store.directory(rid)/'sources.json').read_text())
+        self.assertEqual(sources[0]['url'],'https://example.com/static')
+        self.assertNotIn('https://example.com/shell',[s['url'] for s in sources])
+    def test_curated_findings_preserve_original_reviewed_ledger(self):
+        class CuratedModel(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                result=super().call(role,instruction,data,search)
+                if role=='Synthesis lead':result['finding_ids']=['F002']
+                elif 'findings' in result:
+                    result['findings'].append({'text':'A retry need not be a new operation.','label':'documented',
+                        'sources':['S001'],'quote':'A retry does not establish a second business operation.','caveat':'Fixture only.'})
+                return result
+        store,rid,_=self.run_job(CuratedModel())
+        directory=store.directory(rid);report=json.loads((directory/'report.json').read_text())
+        self.assertEqual([f['text'] for f in report['findings']],['A retry need not be a new operation.'])
+        claims=json.loads((directory/'claims.json').read_text());self.assertEqual(len(claims),2)
+        self.assertEqual([f['published'] for f in claims],[False,True])
 
 if __name__=='__main__':unittest.main()

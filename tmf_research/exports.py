@@ -60,6 +60,10 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
         insert += [('body',f'{key}: {value}') for key,value in council.items()]
         insert += [('body','Simulated perspectives from the same provider; confidence is not factual verification. Raw positions are retained in the builder pack and local run.')]
     lines += insert
+    if synthesis.get('coverage',{}).get('criteria'):
+        lines.append(('heading','Question coverage — model assessment'))
+        for item in synthesis['coverage']['criteria']:
+            lines.append(('body',item['status'].upper()+': '+item['question']+' — '+item['reason']))
     md=markdown(lines)
     # Internal source for converters is retained in the run even if Markdown was not selected.
     source=directory/'presentation.md';source.write_text(md)

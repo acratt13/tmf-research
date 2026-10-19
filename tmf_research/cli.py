@@ -1,4 +1,4 @@
-"""Local evidence/report CLI. Autonomous research roles are specified, not implemented."""
+"""Local evidence/report CLI and bounded TMF Council research runner."""
 from __future__ import annotations
 import argparse
 import hashlib

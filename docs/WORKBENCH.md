@@ -1,6 +1,6 @@
 # TMF Council local research workbench
 
-TMF Council is the research team. A lead creates a bounded plan; a source scout finds public primary sources; specialists investigate different questions; the REA adapter inspects explicitly selected local artifacts. An evidence reviewer challenges claims, advisory perspectives identify consequential gaps, follow-up investigation gathers more evidence, and a synthesis lead creates the selected deliverables. A final model review can withhold unsupported synthesis.
+TMF Council is the research team. A lead creates a bounded plan; a source scout finds public primary sources; specialists investigate different questions; the REA adapter inspects explicitly selected local artifacts. An evidence reviewer challenges claims, advisory perspectives identify consequential gaps, follow-up investigation gathers more evidence, and a synthesis lead creates the selected deliverables. A final model review can withhold unsupported synthesis. The main reader displays the accepted analysis, strongest dissent and question-coverage assessment from the same published revision used for exports.
 
 ## Start
 
@@ -27,7 +27,7 @@ The subject and intended decision form the question. Select any combination of U
 
 | Depth | Web source attempts | Follow-up rounds | Model calls |
 | --- | --- | --- | --- |
-| Quick | 4 | 0 | 14 |
+| Quick | 4 | 0 | 16 |
 | Detailed | 8 | 1 | 24 |
 | Deep | 12 | 2 | 32 |
 
@@ -46,6 +46,12 @@ Selected REA operations retain the evidence envelope, exact saved-envelope hash,
 Factual findings need a known available/partial source and a short exact supporting passage to enter review. Quote matching is only structural admission. A separate role checks entailment against surrounding original context. Unsupported/uncertain claims remain in the local claim ledger and become explicit gaps; they are excluded from accepted findings. A partial source never becomes runtime or completeness proof. Requirements are proposed and include acceptance conditions; their evidence-basis references cannot point to unavailable sources.
 
 The Council adds customer, delivery, operations/economics and assumptions perspectives plus up to two subject-specific perspectives selected by the lead. These are simulated same-provider advisory roles. Raw positions, risks, alternatives and evidence requests are retained. The synthesis must preserve the strongest dissent; confidence is subjective, not a factual verification score. Council opinions cannot approve a factual claim by vote.
+
+An explicit coverage lead assesses every original success criterion using reviewed finding IDs. It prioritizes missing evidence central to the decision, rather than taking the first reviewer objection. Coverage is reassessed after the accepted synthesis exists. The coverage ledger distinguishes answered, partial and unanswered criteria; missing decisions remain unanswered, and incomplete coverage keeps the investigation partial. This is a model assessment, not certification.
+
+The scout records whether each candidate was readable, unverified or unavailable; known unreadable candidates do not displace readable sources. Operator-supplied seeds still receive their explicit acquisition attempt.
+
+Equivalent reviewed claims may be consolidated for publication, while their originals, decisions and consolidation reasons remain in the claim ledger. Reviewers must explicitly attest that supported wording needs no revision; a required qualification withholds the claim until another investigation and review supports corrected wording. Located source windows are selected across the retained text for the research question, rather than always discarding everything after the first excerpt.
 
 Material reviewer/Council objections feed bounded follow-up research. Source-budget exhaustion or failed retrieval leaves a visible gap. The objection ledger retains initial requests conservatively; it is not a complete task-by-task closure proof. Final synthesis receives another evidence review with the material gaps. If rejected, the application withholds its narrative, title, new requirements and workflow, falling back to reviewed findings and earlier validated proposals. No unsupported diagram is silently delivered.
 
@@ -71,4 +77,4 @@ Hosted tenancy, automatic database ingestion, private email access, local PDF/do
 
 ## Live verification
 
-See the [actual integrated customer-service run](../examples/council-live/README.md) for generated artifacts, role/search counts, timings, usage, withheld claims and presentation limits. The preceding manual study and Office-only trial are separate examples. The current regression suite has 37 tests, including quote admission, missing/negative reviews, rejected-synthesis fallback, process limits, private-address rejection, cancellation/restart, local request guards and accepted-revision re-export.
+See the [actual integrated customer-service run](../examples/council-live/README.md) for generated artifacts, role/search counts, timings, usage, withheld claims and presentation limits. The preceding manual study and Office-only trial are separate examples. The current regression suite has 49 tests, including quote admission, missing/negative reviews, rejected-synthesis fallback, process limits, private-address rejection, cancellation/restart, local request guards and accepted-revision re-export.

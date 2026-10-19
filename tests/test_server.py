@@ -66,6 +66,12 @@ class ServerTests(unittest.TestCase):
         self.assertIn('council',exported);self.assertIn('claims',exported)
         result=self.request('/api/result/'+self.rid)
         self.assertEqual(result['report']['title'],'Webhook workflow')
+        self.assertEqual(result['analysis']['sections'][0]['text'],'Proposed durable admission.')
+        self.assertTrue(result['analysis']['coverage']['criteria'])
+    def test_result_never_exposes_rejected_synthesis_draft(self):
+        directory=self.store.directory(self.rid)
+        (directory/'synthesis.json').write_text(json.dumps({'sections':[{'text':'Rejected sales claim'}]}))
+        self.assertNotIn('Rejected sales claim',json.dumps(self.request('/api/result/'+self.rid)))
     def test_resolved_export_failure_is_archived(self):
         self.store.update(self.rid,status='partial',errors=['Requested md export unavailable (RuntimeError); no successful export claimed'])
         self.request('/api/export',{'id':self.rid,'formats':['md']})
@@ -79,6 +85,16 @@ class ServerTests(unittest.TestCase):
     def test_successful_reexport_does_not_upgrade_uncertain_research(self):
         claims=self.store.directory(self.rid)/'claims.json'
         data=json.loads(claims.read_text());data[0]['review']='uncertain';claims.write_text(json.dumps(data))
+        self.store.update(self.rid,status='partial')
+        self.request('/api/export',{'id':self.rid,'formats':['md']})
+        for _ in range(100):
+            state=self.request('/api/runs/'+self.rid)
+            if state['status']!='running':break
+            time.sleep(.03)
+        self.assertEqual(state['status'],'partial')
+    def test_reexport_preserves_incomplete_question_coverage(self):
+        published=self.store.directory(self.rid)/'published-analysis.json'
+        data=json.loads(published.read_text());data['coverage']['criteria'][0]['status']='partial';published.write_text(json.dumps(data))
         self.store.update(self.rid,status='partial')
         self.request('/api/export',{'id':self.rid,'formats':['md']})
         for _ in range(100):
