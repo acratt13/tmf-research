@@ -125,4 +125,6 @@ Initial local evidence: 12 report/validation tests, four synthetic JavaScript as
 
 ## Credits and license
 
+Optional [remote Crawlee collection plugin](plugins/crawlee/README.md): bounded public HTML acquisition, saved evidence passages and JSON/Markdown source packs over SSH. See the [role knowledge-pack contract](docs/KNOWLEDGE-PACKS.md) for the proposed review and KB integration layer. Collection and operational approval remain separate.
+
 MIT for original TMF Research code. [REA](https://github.com/morluto/rea) supplies the external inspection engine. [Archify](https://github.com/tt-a1i/archify) generated the proposed architecture viewer. See [third-party notices](THIRD_PARTY_NOTICES.md). No affiliation with Perplexity, Adobe or Microsoft is implied.
