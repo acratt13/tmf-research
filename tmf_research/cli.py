@@ -193,6 +193,11 @@ def rea_record(path, title):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="TMF Council local research workbench")
     sub = parser.add_subparsers(dest="command", required=True)
+    decision = sub.add_parser("decision-trial", help="Evaluate Perplexity decisions against local labels; advisory only")
+    decision.add_argument("cases", help="JSON array of explicitly selected, provider-safe labeled cases")
+    decision.add_argument("--output", required=True, help="New local trial directory; contains selected case data")
+    decision.add_argument("--model", choices=['pplx-decider-flash-v1.2', 'pplx-decider-v1.2'], default='pplx-decider-flash-v1.2')
+    decision.add_argument("--key-env", default='PERPLEXITY_API_KEY', help="Credential environment variable NAME, never its value")
     serve = sub.add_parser("serve", help="Open the local TMF Council research workbench")
     serve.add_argument("--runs", default="runs/council")
     serve.add_argument("--config", help="Local operator configuration JSON; never model supplied")
@@ -225,7 +230,17 @@ def main(argv=None):
     inspect.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "serve":
+        if args.command == "decision-trial":
+            from .decisions import run_trial
+            from .providers import ProviderError
+            try:
+                result = run_trial(read_json(args.cases), args.output, args.model, args.key_env)
+            except ProviderError:
+                print('Decision credential unavailable. Configure the named credential environment reference.', file=sys.stderr)
+                return 1
+            print(dump(result), end='')
+            return 0 if result['status'] == 'completed' else 2
+        elif args.command == "serve":
             from .server import serve as serve_workbench
             if not 1024 <= args.port <= 65535:
                 raise ValueError("Use an unprivileged local port")
