@@ -35,6 +35,8 @@ Up to three independent specialist role calls run concurrently. Council perspect
 
 Review the combined brief before starting. Presentation choices are separate: Markdown, HTML, PDF, DOCX, XLSX, PPTX, proposed workflow diagram and a structured builder package. The TMF Service Blueprint preset selects all lenses, deep research and all formats. Changing input invalidates the preview.
 
+Saved investigations open in a full-width research reader: conclusion, accepted findings with evidence links and caveats, all proposed requirements with expandable acceptance conditions, latest uncertainty entries and the complete earlier ledger, and a source register with snapshot availability. Setup, activity, raw Council positions and downloads remain secondary controls. New investigation reopens intake; export formats can be selected independently without changing the research brief.
+
 ## Evidence and disagreement
 
 Search results are leads until fetched. A source snapshot records retained-byte SHA256, requested/final URL, content type, charset, retrieval time, availability and truncation. HTML is parsed inertly. Analysts get bounded excerpts; the full retained response and extracted text remain local. The HTTPS transport pins a validated public address with hostname TLS checks, revalidates redirects, ignores environment proxies and applies a socket wall deadline. OS DNS resolution retains the system resolver's timeout.
