@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "scope": "Local Craft CLI export and saved-content readback; no native GUI or Microsoft interoperability test",
+  "input_sha256": {
+    "report": "4c69e685519a44a161d35f3c55f4c5683a45083e4e039fbb1cf55c44268c0fbc",
+    "blueprint": "8fe2b93452508c02fecf1695c7b59f72ee6abe42936333cf9863a9f8e14f8515"
+  },
+  "requirements": 32,
+  "slides": 12,
+  "checks": [
+    "WordCraft saved text",
+    "GridCraft formula",
+    "independent CSV requirement equality",
+    "independent PPTX XML slide count and limitations"
+  ],
+  "outputs": {
+    "blueprint.docx": "4566bd79adcf87877b273a709839a24f27bd7ead1191382856a575bb2c1e4200",
+    "blueprint.pdf": "61341d409978ec556bcfcdcd5ae0ef01a7dc9327037db404484fd019aa98d32e",
+    "requirements.xlsx": "2ae8a0d99ae6363c03d1e42b3beb2086c8f39af428fc06067a8989013095db29",
+    "requirements.csv": "457ef80e338b87e5cbff5ef6656a3f8e03af5f1e83b301e6cacb59b14c328c1f",
+    "briefing.pptx": "0f6168204a615f782697e1864b65fb85ca2d8688840887b01934c0fa646458bb",
+    "briefing.pdf": "8ac697a03e4363bdee42348cc30f7abb61f92b9b7a07e955295266f99f98ce41"
+  }
+}

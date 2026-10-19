@@ -1,0 +1,24 @@
+{
+ "schema_version":2,"diagram_type":"workflow",
+ "meta":{"title":"Customer service pilot · proposed workflow","quality_profile":"showcase","animation":"none"},
+ "lanes":[{"id":"service","label":"Case processing"},{"id":"human","label":"Human takeover","variant":"exception"}],
+ "mainPath":["intake","case","knowledge","decision","reply","review"],
+ "nodes":[
+  {"id":"intake","lane":"service","col":0,"type":"security","label":"Validate intake","sublabel":"signature + identity","width":160},
+  {"id":"case","lane":"service","col":1,"type":"database","label":"Persist case","sublabel":"deduplicate event","width":160},
+  {"id":"knowledge","lane":"service","col":2,"type":"backend","label":"Retrieve policy","sublabel":"permitted + current","width":160},
+  {"id":"decision","lane":"service","col":3,"type":"security","label":"Check answer","sublabel":"authority + evidence","width":160},
+  {"id":"reply","lane":"service","col":4,"type":"messagebus","label":"Send response","sublabel":"outbox + readback","width":160},
+  {"id":"review","lane":"service","col":5,"type":"database","label":"Track outcome","sublabel":"reopen + QA + audit","width":160},
+  {"id":"queue","lane":"human","col":3,"type":"backend","label":"Queue handoff","sublabel":"case context + owner","width":160},
+  {"id":"accept","lane":"human","col":4,"type":"frontend","label":"Confirm takeover","sublabel":"accept or requeue","width":160}
+ ],
+ "edges":[
+  {"from":"intake","to":"case"},{"from":"case","to":"knowledge"},{"from":"knowledge","to":"decision"},
+  {"from":"decision","to":"reply","label":"permitted"},{"from":"reply","to":"review"},
+  {"from":"decision","to":"queue","label":"escalate","variant":"security"},
+  {"from":"queue","to":"accept","label":"offer"},
+  {"from":"accept","to":"reply","label":"human response","role":"return"}
+ ],
+ "cards":[{"dot":"cyan","title":"Durable case, temporary task","items":["Keep routing state separate from case resolution.","Missing acceptance stays queued; timeout never means resolved."]},{"dot":"rose","title":"Recovery is part of the product","items":["Reconcile missed events and uncertain sends.","Human takeover fences automated replies."]}]
+}

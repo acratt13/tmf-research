@@ -1,0 +1,57 @@
+{
+  "scope": "Derived review, not original REA envelope",
+  "rea_version": "6.7.0",
+  "evidence_id": "ev_1739f6b032ef6690663855d14c4ab9f5ec559d1fb07f14382a9a51420185a7b2",
+  "original_envelope_sha256": "214905aa27dc460e872affb5b871957f33d4dca3b2400fe5460778b7252fa6a2",
+  "acquisition": {
+    "package": "twilio",
+    "version": "6.2.0",
+    "repository": {
+      "url": "git+https://github.com/twilio/twilio-node.git",
+      "type": "git"
+    },
+    "url": "https://registry.npmjs.org/twilio/-/twilio-6.2.0.tgz",
+    "sha256": "30e2372f79f1faa8a64dd1205800ff9265d18d6f88772acb89cc2af910c20eec",
+    "integrity_match": true,
+    "selected_files": [
+      {
+        "path": "package.json",
+        "sha256": "78e405860f329546cbbed98c4a794774a92bdfcd3059de06c507abf30859da70"
+      },
+      {
+        "path": "lib/rest/taskrouter/v1/workspace/task.js",
+        "sha256": "770998d6c19af01e6e8c35307094c02d3ee4190f4545a751cab378b5a1a20348"
+      },
+      {
+        "path": "lib/rest/taskrouter/v1/workspace/task/reservation.js",
+        "sha256": "20868acb05e125f03e729683c7222606092dcb43242aeba23501d95e8915def6"
+      }
+    ],
+    "scope": "Three selected release files, dependencies absent; SDK not installed or executed"
+  },
+  "graph_counts": {
+    "nodes": 37,
+    "edges": 44
+  },
+  "limitations": [
+    "Caller-selected source analysis leaves 1 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+    "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+    "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+    "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+    "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+    "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+    "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+  ],
+  "readback": [
+    {
+      "path": "lib/rest/taskrouter/v1/workspace/task.js",
+      "lines": "139-153",
+      "observation": "assignmentStatus serialized to AssignmentStatus; ifMatch to If-Match"
+    },
+    {
+      "path": "lib/rest/taskrouter/v1/workspace/task/reservation.js",
+      "lines": "198-219",
+      "observation": "If-Match supported; updateWithHttpInfo serializes reservationStatus separately"
+    }
+  ]
+}

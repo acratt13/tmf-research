@@ -1,0 +1,455 @@
+{
+  "schema_version": 1,
+  "title": "Customer-service automation: a buildable pilot blueprint",
+  "question": "What must TMF scope, build and verify to offer a premium customer-service automation pilot?",
+  "summary": "Proposed offer: assess the current support workflow, then pilot one inbound text channel and a small approved intent set with reliable human takeover. Own the durable case, permissions, recovery and operating evidence. Reuse channel/routing infrastructure; expand voice and financial actions only after separate scoping. Research pack is useful for discovery and build planning; service implementation and commercial demand remain unproven.",
+  "sources": [
+    {
+      "id": "ZD-COMMENTS",
+      "title": "Zendesk Ticket Comments",
+      "url": "https://developer.zendesk.com/api-reference/ticketing/tickets/ticket_comments/",
+      "state": "available",
+      "retrieved_at": "2026-10-19T06:56:49.685031+00:00",
+      "scope": "Comment visibility, creation API, author/updater identity, size limits and attachment trust",
+      "limitations": "Selected official documentation reviewed; no authenticated vendor tenant or end-to-end integration exercised."
+    },
+    {
+      "id": "ZD-WEBHOOKS",
+      "title": "Zendesk webhook delivery",
+      "url": "https://developer.zendesk.com/documentation/webhooks/creating-and-monitoring-webhooks/",
+      "state": "available",
+      "retrieved_at": "2026-10-19T06:56:49.685031+00:00",
+      "scope": "Duplicate/missing delivery, invocation monitoring and bounded retries",
+      "limitations": "Selected official documentation reviewed; no authenticated vendor tenant or end-to-end integration exercised."
+    },
+    {
+      "id": "TW-TASK",
+      "title": "Twilio Task resource",
+      "url": "https://www.twilio.com/docs/taskrouter/api/task",
+      "state": "available",
+      "retrieved_at": "2026-10-19T06:56:49.685031+00:00",
+      "scope": "Task attributes, conditional updates and lifecycle operations",
+      "limitations": "Selected official documentation reviewed; no authenticated vendor tenant or end-to-end integration exercised."
+    },
+    {
+      "id": "TW-LIFECYCLE",
+      "title": "Twilio task lifecycle",
+      "url": "https://www.twilio.com/docs/taskrouter/lifecycle-task-state",
+      "state": "available",
+      "retrieved_at": "2026-10-19T06:56:49.685031+00:00",
+      "scope": "Routing states, assignment rejection and task record lifetime",
+      "limitations": "Selected official documentation reviewed; no authenticated vendor tenant or end-to-end integration exercised."
+    },
+    {
+      "id": "TW-RESERVATION",
+      "title": "Twilio reservation resource",
+      "url": "https://www.twilio.com/docs/taskrouter/api/reservations",
+      "state": "available",
+      "retrieved_at": "2026-10-19T06:56:49.685031+00:00",
+      "scope": "Offer acceptance, rejection and reservation timeout",
+      "limitations": "Selected official documentation reviewed; no authenticated vendor tenant or end-to-end integration exercised."
+    },
+    {
+      "id": "TW-SECURITY",
+      "title": "Twilio secure webhooks",
+      "url": "https://www.twilio.com/docs/usage/webhooks/webhooks-security",
+      "state": "available",
+      "retrieved_at": "2026-10-19T06:56:49.685031+00:00",
+      "scope": "SDK signature validation with exact URL and evolving parameters",
+      "limitations": "Selected official documentation reviewed; no authenticated vendor tenant or end-to-end integration exercised."
+    },
+    {
+      "id": "STRIPE-IDEMPOTENCY",
+      "title": "Stripe idempotent requests",
+      "url": "https://docs.stripe.com/api/idempotent_requests",
+      "state": "available",
+      "retrieved_at": "2026-10-19T06:56:49.685031+00:00",
+      "scope": "API v1 repeated responses, bounded key retention and parameter consistency",
+      "limitations": "Selected official documentation reviewed; no authenticated vendor tenant or end-to-end integration exercised."
+    },
+    {
+      "id": "REA-TWILIO",
+      "title": "REA static inspection of Twilio Node SDK 6.2.0",
+      "url": "https://registry.npmjs.org/twilio/-/twilio-6.2.0.tgz",
+      "state": "partial",
+      "retrieved_at": "2026-10-19T06:56:49.685031+00:00",
+      "scope": "Two selected task/reservation JS modules; 37 graph nodes and 44 relationships. Exact release archive integrity matched registry metadata.",
+      "limitations": "Selected-file static analysis; dependencies absent, no server behavior or legal state-transition proof. Original envelope retained locally; published review is a derived summary.",
+      "evidence_id": "ev_1739f6b032ef6690663855d14c4ab9f5ec559d1fb07f14382a9a51420185a7b2",
+      "artifact_sha256": "214905aa27dc460e872affb5b871957f33d4dca3b2400fe5460778b7252fa6a2"
+    }
+  ],
+  "findings": [
+    {
+      "text": "Public replies and private notes share the comment model. New comments are submitted through ticket create/update, not a comment-create endpoint. Displayed author and authenticated updater can differ.",
+      "sources": [
+        "ZD-COMMENTS"
+      ],
+      "label": "documented"
+    },
+    {
+      "text": "Comment bodies above 64 kB can be truncated without an error. Attachment URLs can lead outside the vendor host; credentials must not follow them to third parties.",
+      "sources": [
+        "ZD-COMMENTS"
+      ],
+      "label": "documented"
+    },
+    {
+      "text": "Webhook delivery can duplicate or omit events. The documented invocation log covers seven days. An integration needs durable reconciliation beyond that window.",
+      "sources": [
+        "ZD-WEBHOOKS"
+      ],
+      "label": "documented",
+      "caveat": "Reconciliation is our proposed response to the documented delivery limits."
+    },
+    {
+      "text": "A routing Task is not the durable customer case: rejected or timed-out reservations can return a task to pending; terminal task records are deleted after five minutes.",
+      "sources": [
+        "TW-LIFECYCLE"
+      ],
+      "label": "documented"
+    },
+    {
+      "text": "Task updates support ETag/If-Match checks and return 412 on version mismatch. Updating attributes and moving a task to wrapping/completed requires separate requests.",
+      "sources": [
+        "TW-TASK"
+      ],
+      "label": "documented"
+    },
+    {
+      "text": "Reservations are offers to a worker. A reservation that receives no handling decision within its workflow timeout leaves the task available for other workers.",
+      "sources": [
+        "TW-RESERVATION"
+      ],
+      "label": "documented"
+    },
+    {
+      "text": "Twilio recommends SDK request-signature validation, accounting for the exact webhook URL and all received parameters rather than a frozen field list.",
+      "sources": [
+        "TW-SECURITY"
+      ],
+      "label": "documented"
+    },
+    {
+      "text": "Stripe API v1 retains the first executed response for a key, including 500 responses; keys may be pruned after at least 24 hours. Reusing a pruned key can create a new operation.",
+      "sources": [
+        "STRIPE-IDEMPOTENCY"
+      ],
+      "label": "documented"
+    },
+    {
+      "text": "Selected SDK modules serialize task assignmentStatus, reservation reservationStatus and If-Match headers; task and reservation are distinct resource wrappers.",
+      "sources": [
+        "REA-TWILIO"
+      ],
+      "label": "observed",
+      "caveat": "REA parsed selected inert release files; direct source readback confirmed these fields. This does not validate the remote API or complete SDK."
+    },
+    {
+      "text": "A sellable first offer is an assessment plus a narrow assisted-service pilot, followed by separately scoped managed operations. Demand and willingness to pay remain untested.",
+      "sources": [],
+      "label": "proposed"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "CS-001",
+      "text": "Validate provider webhook signatures before admitting work",
+      "acceptance": "Tampered body, wrong URL and invalid signature each create no case or action; valid vendor fixtures pass.",
+      "domain": "Intake",
+      "priority": "P0",
+      "basis": "TW-SECURITY",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-002",
+      "text": "Persist and deduplicate incoming events by tenant, provider and external event identity",
+      "acceptance": "Replaying one event 20 times yields one case effect; same identifier in another tenant stays independent.",
+      "domain": "Intake",
+      "priority": "P0",
+      "basis": "ZD-WEBHOOKS",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-003",
+      "text": "Keep a durable case independent of temporary routing resources",
+      "acceptance": "Expired/deleted task still leaves full case history, owner and unresolved customer request visible.",
+      "domain": "Intake",
+      "priority": "P0",
+      "basis": "TW-LIFECYCLE",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-004",
+      "text": "Verify customer identity before revealing account-specific information",
+      "acceptance": "Unverified sender gets generic help; mismatched account cannot retrieve another customer order.",
+      "domain": "Identity",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-005",
+      "text": "Enforce tenant and record permissions across retrieval, tools and exports",
+      "acceptance": "Adversarial cross-tenant identifiers and disallowed knowledge return denial without data exposure.",
+      "domain": "Identity",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-006",
+      "text": "Set public/private visibility explicitly on every comment action",
+      "acceptance": "Internal-note content never appears in customer reply, retrieval context for that customer or exported transcript.",
+      "domain": "Conversation",
+      "priority": "P0",
+      "basis": "ZD-COMMENTS",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-007",
+      "text": "Preserve actor, displayed author and authenticated updater separately",
+      "acceptance": "Audit readback distinguishes the service account from the employee shown as author.",
+      "domain": "Conversation",
+      "priority": "P0",
+      "basis": "ZD-COMMENTS",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-008",
+      "text": "Check reply size and attachment destination before sending",
+      "acceptance": "Oversized body is held for editing; external attachment fetch sends no vendor credentials and obeys size/type limits.",
+      "domain": "Conversation",
+      "priority": "P0",
+      "basis": "ZD-COMMENTS",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-009",
+      "text": "Use approved versioned knowledge with owner, access scope and expiry",
+      "acceptance": "Expired or inaccessible article is excluded; an answer records the article version supporting it.",
+      "domain": "Knowledge",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-010",
+      "text": "Escalate unsupported answers and hostile instructions in customer content",
+      "acceptance": "A request to ignore policy cannot expand tool authority; absent evidence yields a handoff rather than invented policy.",
+      "domain": "Knowledge",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-011",
+      "text": "Model queue, routing task and reservation as separate linked records",
+      "acceptance": "Rejected reservation remains in history and a new offer links to the same unresolved case.",
+      "domain": "Routing",
+      "priority": "P0",
+      "basis": "TW-RESERVATION",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-012",
+      "text": "Confirm acceptance before treating a human handoff as complete",
+      "acceptance": "Timeout/no available worker leaves a named queue owner and fallback callback task; customer sees an accurate pending state.",
+      "domain": "Routing",
+      "priority": "P0",
+      "basis": "TW-RESERVATION",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-013",
+      "text": "Fence automated replies as soon as human takeover is committed",
+      "acceptance": "Concurrent queued bot send and takeover permit no bot send after the takeover version commits.",
+      "domain": "Routing",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-014",
+      "text": "Re-read and resolve version conflicts before changing task state",
+      "acceptance": "Stale If-Match gets 412; newer owner/state survives and operator receives the conflict.",
+      "domain": "Routing",
+      "priority": "P0",
+      "basis": "TW-TASK",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-015",
+      "text": "Configure skills, capacity, business hours, overflow and abandonment rules",
+      "acceptance": "After-hours, full-capacity and abandoned-request scenarios preserve a recoverable case and correct destination.",
+      "domain": "Routing",
+      "priority": "P1",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-016",
+      "text": "Persist outbound intent and use an idempotent dispatch boundary",
+      "acceptance": "Crash before send, during send and after acknowledgment is recovered without claiming unconfirmed delivery.",
+      "domain": "Actions",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-017",
+      "text": "Represent ambiguous provider outcomes explicitly and reconcile them",
+      "acceptance": "A send timeout records outcome unknown; readback or human resolution establishes its result before retry.",
+      "domain": "Actions",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-018",
+      "text": "Keep money-moving actions outside the first pilot; design their approval contract",
+      "acceptance": "Refund request captures order, amount, currency and responsible owner, but cannot execute a refund in pilot.",
+      "domain": "Actions",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-019",
+      "text": "Scope future payment idempotency to provider API version and operation identity",
+      "acceptance": "For an approved future refund, changed parameters cannot reuse a key; pruned-key and repeated-500 recovery uses authoritative lookup.",
+      "domain": "Actions",
+      "priority": "P1",
+      "basis": "STRIPE-IDEMPOTENCY",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-020",
+      "text": "Reconcile missed events using provider-supported read APIs and checkpoints",
+      "acceptance": "A deliberately omitted webhook is recovered from a known fixture; checkpoint advances only after durable application.",
+      "domain": "Recovery",
+      "priority": "P0",
+      "basis": "ZD-WEBHOOKS",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-021",
+      "text": "Bound retries, record dead letters and provide an operator recovery queue",
+      "acceptance": "Persistent provider failure ends in visible manual recovery with attempt history, without silently dropping the case.",
+      "domain": "Recovery",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-022",
+      "text": "Treat multi-request task completion as a recoverable workflow",
+      "acceptance": "Failure between attribute update and completion does not mark the case resolved; recovery reads both outcomes.",
+      "domain": "Recovery",
+      "priority": "P0",
+      "basis": "TW-TASK",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-023",
+      "text": "Use managed secret references, least privilege and rotation",
+      "acceptance": "Revoked integration credential stops actions visibly; replacement succeeds without credentials in receipts or exports.",
+      "domain": "Security",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-024",
+      "text": "Record append-only action history with retention and redacted logs",
+      "acceptance": "Case owner can reconstruct each action and decision; retention deletion removes scoped content with an auditable receipt.",
+      "domain": "Security",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-025",
+      "text": "Define SLA clocks, pause reasons, timezone and escalation owner",
+      "acceptance": "Weekend, daylight-saving and waiting-on-customer fixtures match the signed service schedule.",
+      "domain": "Operations",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-026",
+      "text": "Measure successful resolution separately from bot response or handoff",
+      "acceptance": "Dashboard reports eligible cases, repeat contacts, acceptance failures, confirmed delivery and correction rate with clear denominators.",
+      "domain": "Operations",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-027",
+      "text": "Provide kill switch, export, restore and vendor outage runbook",
+      "acceptance": "Operator disables automated sends, restores a fixture backup and resumes only after reconciliation.",
+      "domain": "Operations",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-028",
+      "text": "Gate pilot on evaluated cases and actual sandbox workflows",
+      "acceptance": "Signed pilot corpus includes happy path, ambiguity, wrong identity, stale policy, duplicate, omission, timeout, race and unavailable human; no unexplained high-risk failures.",
+      "domain": "QA",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-029",
+      "text": "Sign scope, authoritative systems, dependencies and support ownership",
+      "acceptance": "Client approves included intents/channels, integration access, exceptions, data handling and exit deliverables before go-live.",
+      "domain": "Commercial",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-030",
+      "text": "Establish baseline volumes and a costed pilot budget",
+      "acceptance": "Client inputs measured eligible volume, handling time, provider usage and QA/support effort; budget states uncertainty and stop threshold.",
+      "domain": "Commercial",
+      "priority": "P0",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-031",
+      "text": "Scope voice, recording, telecom and jurisdiction obligations separately",
+      "acceptance": "Before voice launch, responsible owner records applicable consent, recording, number/channel provisioning and specialist decisions for each served location.",
+      "domain": "Expansion",
+      "priority": "P2",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    },
+    {
+      "id": "CS-032",
+      "text": "Assess assurance and sector obligations against actual customer requirements",
+      "acceptance": "Procurement/data classification review identifies requested attestations, contractual controls and any specialist signoff; no certification is inferred from vendor selection.",
+      "domain": "Expansion",
+      "priority": "P2",
+      "basis": "Design",
+      "status": "Proposed; not implemented"
+    }
+  ],
+  "unknowns": [
+    "No customer interview, current buying intent or willingness-to-pay validation; this is a researched service blueprint, not market proof.",
+    "Client identity, jurisdiction, channel mix, monthly volume, peak load, languages and accessibility requirements remain unspecified.",
+    "Authoritative case system, account identity proof, approved knowledge corpus and allowed automatic intents require client selection.",
+    "Vendor plan entitlements, scopes, rate limits, export coverage and current pricing have not been verified in an authenticated tenant.",
+    "No sandbox email/chat/voice delivery, real handoff, refund, intrusion assessment, disaster recovery or production customer-service flow was run.",
+    "Privacy, retention, recording, sector obligations and requested assurance need a scoped client review; this report establishes no legal or certification conclusion.",
+    "Research was performed by an operator using web tools and the real REA repo. The project CLI validated/rendered evidence; it did not autonomously find or assess sources.",
+    "No independent second reviewer checked every claim. Source availability and structural validation do not establish semantic support.",
+    "General-purpose deep-research orchestration, browser acquisition, source snapshots, semantic review and integrated Craft adapters remain unimplemented in the core tool."
+  ]
+}

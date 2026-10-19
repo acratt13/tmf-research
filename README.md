@@ -37,6 +37,8 @@ Use `--audience executive` for a shorter view. Caveats, unknowns and the evidenc
 
 ## Actual Office-engine trial
 
+**Real service study:** [Customer-service automation pilot](examples/customer-service-study/README.md) — official vendor research and actual REA SDK inspection turned into a build blueprint, 32 acceptance requirements, editable Office files and an interactive workflow. Research was operator-assisted; the repository did not autonomously investigate the subject.
+
 WordCraft, GridCraft and DeckCraft v0.8.0 created, reopened, edited and exported an original service-readiness briefing. [See the trial and download DOCX/XLSX/PPTX/PDF outputs](docs/CRAFT-TRIAL.md). This is a reproducible local engine test, not an implemented autonomous research pipeline.
 
 ![DeckCraft-generated briefing](examples/craft-trial/presentation-preview.png)
