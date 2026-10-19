@@ -1,0 +1,131 @@
+"""Presentation adapters for one accepted research revision; failures remain visible."""
+from __future__ import annotations
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import textwrap
+from .cli import dump, html_report, markdown, pdf_report, report_lines
+from .processes import bounded_run
+
+
+def export_run(directory, record, synthesis, formats, config, check_cancel=lambda:None):
+    directory=Path(directory); out=directory/'outputs';out.mkdir(exist_ok=False)
+    (directory/'published-analysis.json').write_text(dump(synthesis))
+    outputs=[];errors=[]; receipts=[]
+    lines=report_lines(record)
+    # Synthesis sections are proposed analysis, separate from reviewed factual findings.
+    insert=[]
+    for section in synthesis.get('sections',[])[:12]:
+        if isinstance(section,dict):
+            insert.extend([('heading','Analysis / proposed design: '+str(section.get('heading',''))),('body',str(section.get('text','')))])
+    council=synthesis.get('council_synthesis',{})
+    if isinstance(council,dict) and any(council.values()):
+        insert += [('heading','TMF Council — advisory synthesis')]
+        insert += [('body',f'{key}: {value}') for key,value in council.items()]
+        insert += [('body','Simulated perspectives from the same provider; confidence is not factual verification. Raw positions are retained in the builder pack and local run.')]
+    lines += insert
+    md=markdown(lines)
+    # Internal source for converters is retained in the run even if Markdown was not selected.
+    source=directory/'presentation.md';source.write_text(md)
+    def retain(name):
+        path=out/name
+        if not path.is_file() or path.stat().st_size==0: raise ValueError('Renderer produced no file')
+        outputs.append(name);receipts.append({'file':name,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'bytes':path.stat().st_size,'validation':'file exists; adapter-specific checks recorded separately'})
+    command_number=0
+    def run(cmd):
+        nonlocal command_number
+        command_number+=1
+        p=bounded_run(cmd,timeout=120)
+        (directory/f'export-{command_number:02}-stdout.txt').write_text(p.stdout)
+        (directory/f'export-{command_number:02}-stderr.txt').write_text(p.stderr)
+        if p.returncode: raise RuntimeError('Presentation engine returned nonzero exit')
+        return p.stdout
+    def command(name,params):return ['--cmd',name+'='+json.dumps(params)]
+    craft=config.get('craft',{})
+    for fmt in formats:
+        check_cancel()
+        try:
+            if fmt=='md':(out/'report.md').write_text(md);retain('report.md')
+            elif fmt=='html':(out/'report.html').write_text(html_report(lines));retain('report.html')
+            elif fmt=='pdf':
+                if craft.get('wordcraft'):
+                    run([craft['wordcraft'],'convert',str(source),str(out/'report.pdf')])
+                else:pdf_report(out/'report.pdf',lines)
+                retain('report.pdf')
+            elif fmt=='builder':
+                bundle={'report':record,'analysis':synthesis,'kind':'Research blueprint; not implementation proof'}
+                for key in ('plan','claims','council'):
+                    path=directory/(key+'.json')
+                    if path.exists():bundle[key]=json.loads(path.read_text())
+                (out/'builder-pack.json').write_text(dump(bundle));retain('builder-pack.json')
+            elif fmt=='docx':
+                exe=craft['wordcraft'];run([exe,'convert',str(source),str(out/'report.docx')])
+                saved=run([exe,'text',str(out/'report.docx')])
+                if record['title'] not in saved or 'Unknowns and remaining work' not in saved:raise ValueError('Word saved-content check failed')
+                retain('report.docx')
+            elif fmt=='xlsx':
+                exe=craft['gridcraft'];commands=[]
+                rows=[['ID','Requirement (proposed)','Acceptance','Evidence basis','Status']]
+                rows += [[r['id'],r['text'],r['acceptance'],', '.join(r.get('basis',[])),'Proposed; not implemented'] for r in record['requirements']]
+                rows += [['','','','',''],['Evidence register','','','','']]
+                rows += [[s['id'],s['title'],s.get('url',s.get('evidence_id','')),s['state'],s['limitations']] for s in record['sources']]
+                rows += [['','','','',''],['Unknowns','','','','']]+[['',text,'','',''] for text in record['unknowns']]
+                # Prevent research text from becoming spreadsheet formulas.
+                for i,row in enumerate(rows,1):
+                    for j,value in enumerate(row):
+                        value=str(value)
+                        if value.lstrip().startswith(('=','+','-','@')):value="'"+value
+                        commands.append({'command':'cell.set','params':{'cell':f'{chr(65+j)}{i}','input':value}})
+                commands += [{'command':'home.wrapText','params':{'range':f'A1:E{len(rows)}','on':True}},
+                             {'command':'home.columnWidth','params':{'cols':'B:B,C:C,E:E','width':340}},
+                             {'command':'view.freezeTopRow','params':{}}]
+                script=directory/'grid-export.jsonl';script.write_text('\n'.join(json.dumps(x) for x in commands))
+                run([exe,'run','--script',str(script),'--out',str(out/'requirements.xlsx'),'--quiet'])
+                saved=run([exe,'cat',str(out/'requirements.xlsx'),'--range',f'A1:E{len(rows)}'])
+                if 'Evidence register' not in saved or 'Unknowns' not in saved:raise ValueError('Workbook lost caveats/evidence')
+                retain('requirements.xlsx')
+            elif fmt=='pptx':
+                exe=craft['deckcraft']
+                slides=[('Research brief',record['question']),('Conclusion',record['summary'])]
+                slides += [('Finding / '+f['label'],f['text']+'\nEvidence: '+', '.join(f['sources'])+'\n'+f.get('caveat','')) for f in record['findings'][:6]]
+                slides += [('Unknowns and limits','\n'.join(record['unknowns'][:4]))]
+                slides=[(title+(' · continued' if i else ''),chunk)
+                        for title,body in slides for i,chunk in enumerate(textwrap.wrap(body,width=550,
+                            replace_whitespace=False,drop_whitespace=True,break_long_words=True) or [''])]
+                # Full source URLs and all caveats remain in speaker notes even in a short briefing.
+                notes=md
+                if len(notes)>100000:raise ValueError('Presentation notes exceed bounded export size')
+                cmd=[exe,'run',*command('file.new',{'blank':True,'theme':'Nocturne'})]
+                for title,body in slides:
+                    cmd+=command('slide.new',{'layout':'blank'})+command('design.background',{'color':'#101A2C'})
+                    for rect,text,size,color in [([55,40,850,90],title,30,'#FFFFFF'),([55,155,850,310],body,19,'#D7E3F0')]:
+                        cmd+=command('insert.textBox',{'rect':rect,'text':text})+command('format.fontDialog',{'family':'Inter','size':size,'color':color})
+                    cmd+=command('slide.notes',{'text':notes})
+                run(cmd+['--save',str(out/'briefing.pptx')]);retain('briefing.pptx')
+            elif fmt=='diagram':
+                prefix=config['archify']
+                if not isinstance(prefix,list) or not prefix or any(not isinstance(x,str) for x in prefix):raise ValueError('Invalid Archify command prefix')
+                steps=synthesis.get('workflow_steps',[])[:6]
+                if len(steps)<2:raise ValueError('Synthesis did not provide enough workflow steps')
+                spec={'schema_version':2,'diagram_type':'workflow',
+                      'meta':{'title':'Proposed workflow · '+record['title'][:70],'quality_profile':'showcase','animation':'none'},
+                      'lanes':[{'id':'work','label':'Proposed workflow; verify before implementation'}],
+                      'mainPath':[f'n{i}' for i in range(len(steps))],
+                      'nodes':[{'id':f'n{i}','lane':'work','col':i,'type':'backend',
+                                'label':textwrap.shorten(str(s.get('label','Step')),width=26,placeholder='…'),
+                                'sublabel':textwrap.shorten(str(s.get('detail','')),width=30,placeholder='…'),'width':210} for i,s in enumerate(steps)],
+                      'edges':[{'from':f'n{i}','to':f'n{i+1}'} for i in range(len(steps)-1)],
+                      'cards':[{'dot':'cyan','title':'Evidence boundary','items':['Proposed analysis, not an observed runtime.','See the report and builder pack for evidence and unresolved decisions.']}]}
+                specpath=out/'workflow.json';specpath.write_text(dump(spec))
+                run(prefix+['validate','workflow',str(specpath),'--quality','showcase','--json'])
+                delivery=run(prefix+['deliver','workflow',str(specpath),str(out/'workflow.html'),'--quality','showcase','--json'])
+                (directory/'archify-delivery.json').write_text(delivery)
+                retain('workflow.json');retain('workflow.html')
+        except (OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError,RuntimeError) as exc:
+            errors.append(f'Requested {fmt} export unavailable ({type(exc).__name__}); no successful export claimed')
+    (out/'export-receipt.json').write_text(dump({'record_sha256':hashlib.sha256(dump(record).encode()).hexdigest(),
+                                               'artifacts':receipts,'errors':errors,
+                                               'limits':'Local adapter results; independent visual and format-interoperability review required.'}))
+    outputs.append('export-receipt.json')
+    return outputs,errors

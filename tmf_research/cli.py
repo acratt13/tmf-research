@@ -191,8 +191,16 @@ def rea_record(path, title):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="TMF Research evidence/report foundation (early release)")
+    parser = argparse.ArgumentParser(description="TMF Council local research workbench")
     sub = parser.add_subparsers(dest="command", required=True)
+    serve = sub.add_parser("serve", help="Open the local TMF Council research workbench")
+    serve.add_argument("--runs", default="runs/council")
+    serve.add_argument("--config", help="Local operator configuration JSON; never model supplied")
+    serve.add_argument("--port", type=int, default=8765)
+    run = sub.add_parser("run", help="Run a research brief through TMF Council")
+    run.add_argument("brief")
+    run.add_argument("--runs", default="runs/council")
+    run.add_argument("--config", help="Local operator configuration JSON")
     check = sub.add_parser("validate", help="Check report structure and source references, not claim truth")
     check.add_argument("record")
     render = sub.add_parser("render", help="Render one structured record as Markdown, HTML or PDF")
@@ -212,7 +220,21 @@ def main(argv=None):
     inspect.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "validate":
+        if args.command == "serve":
+            from .server import serve as serve_workbench
+            if not 1024 <= args.port <= 65535:
+                raise ValueError("Use an unprivileged local port")
+            serve_workbench(args.runs, read_json(args.config) if args.config else {}, args.port)
+        elif args.command == "run":
+            from .engine import ResearchEngine, RunStore
+            store = RunStore(args.runs)
+            run_id = store.create(read_json(args.brief))
+            print(dump({"run_id": run_id, "status": "queued"}), end="", flush=True)
+            ResearchEngine(store, read_json(args.config) if args.config else {}).execute(run_id)
+            state = store.read(run_id)
+            print(dump(state), end="")
+            return 0 if state["status"] == "completed" else 2
+        elif args.command == "validate":
             record = validate(read_json(args.record))
             print(dump({"valid": True, "findings": len(record["findings"]), "claim_truth": "not_checked"}), end="")
         elif args.command == "render":
@@ -236,8 +258,9 @@ def main(argv=None):
             if Path(args.output).exists():
                 raise ValueError("Output already exists")
             # REA runs only after an explicit inspect command. No model selects executable commands.
-            result = subprocess.run(prefix + [args.operation, str(Path(args.target).resolve()), "--json"],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=args.timeout, check=False)
+            from .processes import bounded_run
+            result = bounded_run(prefix + [args.operation, str(Path(args.target).resolve()), "--json"],
+                                 timeout=args.timeout, max_output=16 * 1024 * 1024, text=False)
             if len(result.stdout) > 16 * 1024 * 1024:
                 raise ValueError("REA output exceeds the 16 MiB retained-output limit")
             envelope = json.loads(result.stdout)

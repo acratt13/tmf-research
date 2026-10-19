@@ -34,7 +34,7 @@ The script requires a new output directory, retains each command's stdout/stderr
 - WordCraft's first page and DeckCraft slides 1 and 6 were visually inspected. All generated PDFs were text-read for critical content and source references. This is not a full cross-platform typography review.
 - GridCraft HTML export retained data but not the XLSX table styling; its plain table can require horizontal scrolling. Do not treat it as a premium workbook preview.
 - GridCraft's calc oracle and roundtrip check used a file created by GridCraft. Explicit values were also checked, but actual Excel interoperability, other producers' formula caches, and complex legacy files remain untested.
-- Native GUI editing, MCP agent sessions, embedded shared revisions and runtime research-workbench adapters remain untested or unimplemented.
+- At this trial: native GUI editing, MCP agent sessions, embedded shared revisions and runtime research-workbench adapters were untested or unimplemented. The subsequent local CLI research adapters are documented in [WORKBENCH.md](WORKBENCH.md); native editing/Microsoft interoperability remain unverified.
 - PDF/native files are useful outputs; production suitability, complete Microsoft fidelity and all advertised upstream features have not been established.
 
 No upstream binaries, source, icons or branding assets are redistributed. The original generated study and script are part of this repository; upstream code, fonts and other assets retain their own terms.

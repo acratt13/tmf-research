@@ -36,3 +36,7 @@ External engine, not bundled. Upstream: https://github.com/morluto/rea (MIT). In
 ## ReportLab
 
 Optional PDF dependency, not vendored. Its own license and terms apply.
+
+## War Council skill inspiration
+
+TMF Council's critical-perspective approach was informed by the War Council shared-example skill, copyright (c) 2026 Zapier, Inc., MIT licensed. Original license and notice are preserved in `third_party/war-council/`. TMF Council's research orchestration and role contracts are original project code. No Zapier affiliation or endorsement is implied; simulated roles are not real advisors.

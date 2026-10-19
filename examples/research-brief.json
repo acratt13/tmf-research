@@ -1,0 +1,10 @@
+{
+  "question": "What does a reliable customer-service automation pilot need for webhook intake and human handoff?",
+  "context": "Research a proposed text-channel service. No customer interviews, vendor tenant or implemented workflow are available. Identify hidden requirements and the evidence still needed.",
+  "lenses": ["understand", "build", "audit", "offer"],
+  "depth": "detailed",
+  "formats": ["md", "html", "builder"],
+  "council": true,
+  "urls": ["https://developer.zendesk.com/documentation/webhooks/creating-and-monitoring-webhooks/"],
+  "inspections": []
+}

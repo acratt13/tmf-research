@@ -1,0 +1,113 @@
+{
+  "kind": "TMF Council; same-provider simulated perspectives",
+  "positions": [
+    {
+      "role": "Customer advocate",
+      "position": "Conditionally support an overlay pilot, but buyer value and customer experience must determine its scope.",
+      "reason": "The supplied research carefully distinguishes routing from usable takeover, yet technical recovery dominates. No interviews, baseline outcomes or purchase evidence establish that automation solves the buyer’s most costly service problem. Retaining the existing inbox is a plausible adoption advantage, not a demonstrated one.",
+      "underweighted_risk": "Consequential omission: customers lack explicit acceptance criteria for requesting a human, understanding their waiting status and avoiding repeated explanations. A technically confirmed takeover can still leave someone waiting without meaningful help.",
+      "alternative": "First validate one painful, frequent intent with the buyer and frontline agents. Propose an accessible human-request path, honest waiting messages and preserved context. Judge the supervised pilot against current service using resolution quality, repeat contacts, customer effort and total agent workload, including approvals and recovery.",
+      "evidence_needed": [
+        "Buyer and agent interviews identifying the problem, budget and adoption constraints",
+        "Representative baseline tickets and customer outcomes",
+        "Observed customer-to-agent journeys, including failed handoffs and after-hours waits",
+        "Willingness to pay for each separately scoped stage"
+      ],
+      "follow_up_queries": [
+        "Which customer problem warrants automation rather than a workflow fix?",
+        "What waiting time and repeated-contact rate would customers tolerate?",
+        "Does supervision reduce total work or move it elsewhere?"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "role": "Delivery architect",
+      "position": "Prefer a conditional overlay pilot, but make recovery feasibility an assessment exit gate before committing to delivery scope.",
+      "reason": "The supplied findings distinguish routing acceptance from usable takeover and acknowledge webhook omissions. However, the proposed ledger, outbox and ownership states cannot establish reliable recovery without verified source and channel interfaces. Repeated requirements add detail without resolving those dependencies.",
+      "underweighted_risk": "Consequential omission: no defined delivery-time authorization boundary connects ownership changes to customer-visible sends. A bot reply can pass an ownership check, stall, then reach the customer after human takeover. Local serialization and Task ETags do not establish control over an external channel's queued or in-flight sends.",
+      "alternative": "Specify an adapter capability matrix first: authoritative reconciliation, stable message identities, send-status lookup, idempotency, cancellation and ownership enforcement. Where cancellation or send-outcome resolution is unavailable, propose a draining/quarantine handoff state with explicit operator responsibility and disclosed limits.",
+      "evidence_needed": [
+        "Selected helpdesk's change-feed coverage, retention, pagination and deletion semantics",
+        "Channel send idempotency, status lookup and cancellation contracts",
+        "Witnessed delayed-send race across human acceptance, including restart and ambiguous timeout"
+      ],
+      "follow_up_queries": [
+        "Does the selected channel support resolving and cancelling pending outbound sends?",
+        "Can the selected helpdesk enumerate all missed conversation changes within the recovery window?"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "role": "Operations economist",
+      "position": "Support a bounded overlay pilot conditionally; its economics remain unproven.",
+      "reason": "The research appropriately separates assessment, pilot and managed operations and identifies recovery labor. However, listing cost categories does not establish viable pricing or savings. Supervisor review, retained licenses and integration maintenance could consume any handling-time benefit.",
+      "underweighted_risk": "Consequential omission: recovery capacity during correlated failures. An outage can create simultaneous replay, investigation and takeover demand while agents still handle normal arrivals. Average labor estimates can conceal backlog growth, overtime and missed service targets.",
+      "alternative": "Propose a capacity-constrained pilot with explicit exception-work limits, protected recovery staffing and stop rules. Compare incremental total cost against the current workflow and native helpdesk automation. Treat released staff time separately from cash savings; small time reductions may not eliminate paid shifts.",
+      "evidence_needed": [
+        "Normal and peak arrivals, handling times, review time and exception rates",
+        "Recovery drill labor, backlog clearance time and available backup capacity",
+        "Loaded labor costs, retained commitments and buyer-valued service outcomes",
+        "Buyer willingness to fund minimum coverage and excess incident work"
+      ],
+      "follow_up_queries": [
+        "Who funds recovery when incident demand exceeds included hours?",
+        "What measurable improvement justifies the pilot's incremental cost?"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "role": "Service-delivery and commercial perspective",
+      "position": "Support separately contracted assessment and supervised pilot; managed operations remains an unvalidated offer.",
+      "reason": "The research correctly separates routing acceptance from usable takeover and recognizes recovery labor. However, extensive proposed controls establish neither delivery feasibility nor a priceable service. An overlay preference remains conditional on buyer workflow and recoverable source data.",
+      "underweighted_risk": "Consequential omission: a quantified capacity and commercial response to correlated failures. A provider outage can create simultaneous reconciliation work and human handoffs, exhausting both TMF recovery staff and customer agents. Usage caps alone do not bound this labor or customer waiting time.",
+      "alternative": "Propose a capped pilot with explicit customer staffing dependencies, concurrent-handoff and recovery-backlog limits, and agreed pause, fallback and restart rules. Measure supervision and exception labor before quoting managed operations; define what happens when included recovery hours are exhausted, including who retains unresolved work.",
+      "evidence_needed": [
+        "Buyer-approved baseline and purchase-success criteria",
+        "Primary/backup staffing commitments and peak-capacity assumptions",
+        "Witnessed outage/backlog drill measuring recovery labor and takeover delay",
+        "Cost scenarios covering correlated incidents, service caps and customer dependency failures"
+      ],
+      "follow_up_queries": [
+        "Who owns and funds unresolved conversations when coverage or recovery allowance ends?",
+        "What peak backlog can both teams clear within agreed service targets?"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "role": "Assumptions challenger",
+      "position": "Support assessment only; the proposed pilot remains conditional on recovery feasibility and buyer value.",
+      "reason": "The supplied excerpts support delivery and routing limitations. They do not establish that the selected helpdesk exposes enough history to reconstruct omitted events. A current-state snapshot may miss intermediate messages or transitions. Repeated findings from the same passages add no independent evidence.",
+      "underweighted_risk": "Consequential omission: explicit remediation for an incorrect customer-visible reply. Reliable delivery and confirmed takeover can still leave a customer acting on wrong advice; technical replay cannot undo that harm.",
+      "alternative": "Start with draft-only assistance in the existing inbox, with agents sending replies. Add automated sending only after demonstrating missed-message discovery, resolving ambiguous send outcomes, and measuring benefit against the current workflow.",
+      "evidence_needed": [
+        "Selected channel/helpdesk history, pagination, retention and deletion semantics",
+        "Witnessed missing-message and ambiguous-send recovery results",
+        "Buyer baseline, success thresholds and affordable review/recovery workload",
+        "Named owner and procedure for correcting harmful replies and contacting affected customers"
+      ],
+      "follow_up_queries": [
+        "Can the selected helpdesk reconstruct every missed inbound message across outages?",
+        "How are incorrect replies detected, corrected and communicated to customers?"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "role": "Reliability and support-operations perspective",
+      "position": "Conditionally support an overlay pilot, but recovery and takeover remain unproven proposals.",
+      "reason": "The supplied evidence distinguishes webhook receipt, routing acceptance and usable human takeover. The requirements cover many failure cases, but a test checklist does not establish that operators can sustain the resulting workload.",
+      "underweighted_risk": "Consequential omission: recovery capacity under correlated failure. An outage can simultaneously flood reconciliation, ambiguous-send review and stalled handoffs while agents handle normal demand. Named owners and deadlines do not demonstrate enough staffed capacity to prevent an aging exception backlog.",
+      "alternative": "Start with a capped, staffed overlay pilot. Propose exception-volume and oldest-item stop thresholds, reserve recovery capacity, and pause new automation when those limits are breached. Confirm takeover per conversation; monitor subsequent owner disconnection and unanswered work.",
+      "evidence_needed": [
+        "Authoritative missed-message discovery method, including retention and pagination limits",
+        "Timed operator drill covering outage backlog, shift handover and unavailable backup",
+        "Measured exception handling time, peak arrival rates and backlog clearance capacity",
+        "Evidence linking human acknowledgment, context access, reply capability and automation suppression"
+      ],
+      "follow_up_queries": [
+        "Which authoritative API exposes messages omitted from webhook delivery?",
+        "Who clears exceptions during a peak outage, and what workload triggers a pilot stop?"
+      ],
+      "confidence": "medium"
+    }
+  ]
+}

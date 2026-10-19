@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tmf-research"
-version = "0.1.0"
-description = "Evidence and report foundation for a research workbench with REA software inspection"
+version = "0.2.0"
+description = "Local TMF Council research workbench with evidence review, REA inspection and presentation adapters"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{name = "TMF Systems"}]
@@ -20,3 +20,6 @@ tmf-research = "tmf_research.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["tmf_research*"]
+
+[tool.setuptools.package-data]
+tmf_research = ["web/*.html", "web/*.css", "web/*.js"]

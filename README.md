@@ -6,11 +6,24 @@
 
 An open workbench for turning research and software inspection into useful, traceable specifications—not just another long answer.
 
-**Early foundation release.** The evidence/report CLI below works. Autonomous research agents, live web retrieval, the application UI and editor integrations are **not implemented yet**. This is not a finished Perplexity alternative.
+**Local workbench, early release.** TMF Council connects a research lead, source scout, specialist investigations, real REA inspection, evidence review, critical perspectives, follow-up research and selected exports. Roles are separate bounded calls through the user's installed Codex CLI, not independent human experts. Read the [setup, evidence boundaries and live-run verification](docs/WORKBENCH.md). This is not a hosted service or a proven improvement over ordinary search.
 
 ![Proposed research architecture](docs/architecture.png)
 
 ## Try it in one minute
+
+For the research workspace, use Python 3.11+ and an authenticated **Codex CLI 0.160.1**. The exact CLI boundary is checked; other versions fail visibly rather than silently weakening role isolation.
+
+```bash
+python3 -m tmf_research serve
+# Open http://127.0.0.1:8765
+```
+
+Choose any combination of **Understand / Compare / Build / Audit / Offer a service**. Choose depth and outputs, review the brief, then start. The **TMF Service Blueprint** preset selects all lenses and formats. Optional Craft/Archify exports and REA targets require local operator configuration; missing engines produce explicit partial results. Start with Markdown, HTML and the builder package for a dependency-free presentation path.
+
+For command-line research, see [example brief](examples/research-brief.json) and [configuration](examples/workbench-config.json). Run files and evidence stay under ignored `runs/` by default. Selected brief, public passages and local REA excerpts are sent to the model provider; select only material you intend to share.
+
+### Existing evidence/report commands
 
 Python 3.11+. Core commands have no third-party Python runtime dependencies.
 
@@ -36,6 +49,8 @@ python -m tmf_research render examples/report.json --format pdf --output runs/re
 Use `--audience executive` for a shorter view. Caveats, unknowns and the evidence register remain in both views. PDF currently uses ReportLab's default core fonts; complex-script/complete Unicode typography is not established.
 
 ## Actual Office-engine trial
+
+**Integrated Council run:** [Read the generated research and verification](examples/council-live/README.md). Seventeen role calls, actual source retrieval and REA inspection, six critical perspectives, follow-up research, 16 accepted findings and 14 proposed requirements. Three uncertain claims were withheld; the example remains partial, with diagram quality work explicitly outstanding.
 
 **Real service study:** [Customer-service automation pilot](examples/customer-service-study/README.md) — official vendor research and actual REA SDK inspection turned into a build blueprint, 32 acceptance requirements, editable Office files and an interactive workflow. Research was operator-assisted; the repository did not autonomously investigate the subject.
 
@@ -74,11 +89,12 @@ Import deliberately starts with **zero asserted findings** and partial/unreviewe
 | PDF | Implemented via optional ReportLab; generated, text-read and first page visually reviewed |
 | Explicit local REA invocation and conservative import | Implemented; real JavaScript fixture inspection run with REA 6.7.0 |
 | Proposed architecture diagram | Generated with Archify; artifact and bounded desktop-browser checks passed |
-| Planner, researcher, reviewer and writer agent team | Specified; not implemented |
-| Iterative web search/fetch and source comparison | Specified; not implemented |
-| Archify runtime/export adapter | Not implemented; current diagram was authored separately |
-| WordCraft / GridCraft / DeckCraft outputs | Reproducible local CLI trial passed; integrated runtime adapters and native GUI still unimplemented/untested |
-| GUI, hosted multi-client service and automatic KB ingestion | Not implemented |
+| Lead, scout, specialist, reviewer, Council and writer roles | Connected local role calls; same-provider model review, not factual certification |
+| Iterative web search/fetch and retained source evidence | Native web-search events checked; bounded HTTPS snapshots and selected follow-up research |
+| Archify runtime/export adapter | Configurable proposed-workflow generation with showcase validation/delivery |
+| WordCraft / GridCraft / DeckCraft outputs | Configurable local CLI adapters; document/workbook readback and citation/caveat preservation; native GUI/Microsoft interoperability not established |
+| Research UI and durable runs | Loopback workbench, composable lenses, preset, live stages, result files and saved history |
+| Hosted multi-client service, document uploads and automatic KB ingestion | Not implemented |
 
 The validator checks required fields, reference integrity, evidence availability and visible partial-source caveats. **It cannot establish whether a claim is true or entailed by a source.**
 

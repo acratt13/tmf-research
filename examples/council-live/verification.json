@@ -1,0 +1,33 @@
+{
+  "kind": "Sanitized live-run summary; original snapshots and role packets remain local",
+  "run_id": "57c1250ec5f0442d8da1a66838d8f1e3",
+  "question": "What must TMF include in a reliable customer-service automation pilot, particularly webhook recovery and confirmed human takeover?",
+  "findings": 16,
+  "requirements": 14,
+  "claim_review_counts": {
+    "supported": 12,
+    "proposal": 4,
+    "uncertain": 3,
+    "unsupported": 0
+  },
+  "model_calls": 17,
+  "native_web_search_events": 7,
+  "input_tokens_including_cached": 767946,
+  "cached_input_tokens": 260352,
+  "output_tokens": 17270,
+  "dollar_cost": "unavailable",
+  "research_elapsed_seconds": 340,
+  "synthesis_review": {
+    "supported": true,
+    "concerns": []
+  },
+  "artifacts": {
+    "report.json": "6c479318ba474bf10ef6aa3bfe482186fa15c64947ec749c185f1e8b7d5275b2",
+    "report.md": "ed6a4ce5f267e393253693ef7a62644ed0fc8b77072b65ab4d9bc93e58fe2511",
+    "report.docx": "cf7c619e622d7c17fe8691eeaca10932d4fafcb2c64b46fe0130a924ff3e03ec",
+    "council.json": "84e55f74923ed2dea8807eaa2106195ffa934ecb70c63fd624a26838c657e86e",
+    "briefing.pptx": "22e8a42a1bef8f150874749863d04057c734bc2ca6b9a52cf83add0fc4df18d0",
+    "report.pdf": "bea2622a9f15547ca721993d8c4d50c8c15fb0294e46f3cc482bff13dec73b14",
+    "requirements.xlsx": "380913042f8bb7353344a49065bcef3ffde306fb12e6171910d7c8f2d58154ab"
+  }
+}

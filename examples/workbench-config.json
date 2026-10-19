@@ -1,0 +1,18 @@
+{
+  "codex": "codex",
+  "craft": {
+    "wordcraft": "/path/to/wordcraft-cli",
+    "gridcraft": "/path/to/gridcraft-cli",
+    "deckcraft": "/path/to/deckcraft-cli"
+  },
+  "archify": ["node", "/path/to/archify/bin/archify.mjs"],
+  "inspections": {
+    "selected-artifact": {
+      "title": "Selected public artifact",
+      "operation": "analyze-javascript-application",
+      "command": ["rea"],
+      "target": "/path/to/selected/artifact",
+      "source_paths": ["selected-module.js"]
+    }
+  }
+}

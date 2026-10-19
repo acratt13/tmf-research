@@ -1,6 +1,6 @@
 # Research workbench specification
 
-Version 0.1 · Proposed architecture. See README for implemented scope.
+Version 0.2 · Architecture and broader target scope. The local TMF Council loop is implemented; see WORKBENCH.md and README for the exact supported boundary.
 
 ## Product job
 
@@ -79,8 +79,8 @@ For REA, replay known complete/partial/failure outputs and run at least one actu
 
 ## Current implementation and remaining work
 
-Implemented: local report contract validation; evidence-labeled Markdown/HTML export; optional PDF export; selected REA CLI invocation; conservative REA envelope import. Validation is structural; it does not verify claim truth. Local commands do not form a hosted service or secure sandbox.
+Implemented: local report validation and exports; actual selected REA invocation/import; loopback multi-lens research UI; fresh bounded lead/scout/specialist/reviewer/Council/synthesis calls through the tested Codex CLI; public source search and retained HTTPS snapshots; bounded follow-up; claim rejection and synthesis withholding; configurable Craft/Archify adapters; persistent run records and accepted-revision re-export. Structural checks and model review do not certify truth. See WORKBENCH.md for access, limits, privacy, run states and verification.
 
-Not implemented: autonomous planner/researcher/reviewer roles; live search/fetch adapters; iterative investigation; durable run orchestration; semantic claim verification; browser/native REA orchestration; Archify runtime adapter; editable office/design adapters; GUI; hosted multi-client service; automatic knowledge-base ingestion.
+Not implemented: independent human or cross-provider semantic verification; generalized browser/native REA orchestration; local document uploads; complete gap-closure tracking; automatic resume; hard monetary budgets; hosted multi-client service; automatic knowledge-base ingestion. Native Office interoperability and arbitrary production layouts remain unverified.
 
-First vertical slice to build next: one software question → bounded primary-source search → one selected real REA inspection → reviewed claim ledger → detailed specification → Markdown/PDF/Archify views. Complete the privacy, cost and recovery tests for this slice before broadening provider support.
+Current vertical slice: one question → primary-source search → retained source/selected REA evidence → specialist claims → evidence review → Council objections → follow-up → reviewed synthesis → chosen deliverables. Use real runs and the controlled ordinary-search comparison to decide what to improve next; do not infer quality from role count, file count or a completed status.
