@@ -50,6 +50,8 @@ Use `--audience executive` for a shorter view. Caveats, unknowns and the evidenc
 
 ## Actual Office-engine trial
 
+**Research quality direction:** [ChatGPT, Perplexity and Crawlee comparison](docs/DEEP-RESEARCH-COMPARISON.md) separates documented patterns, current engine gaps and proposed upgrades with acceptance evidence.
+
 **Integrated Council run:** [Read the generated research and verification](examples/council-live/README.md). Seventeen role calls, actual source retrieval and REA inspection, six critical perspectives, follow-up research, 16 accepted findings and 14 proposed requirements. Three uncertain claims were withheld; the example remains partial, with a separately verified DesignCraft workflow export.
 
 **Real service study:** [Customer-service automation pilot](examples/customer-service-study/README.md) — official vendor research and actual REA SDK inspection turned into a build blueprint, 32 acceptance requirements, editable Office files and an interactive workflow. Research was operator-assisted; the repository did not autonomously investigate the subject.
