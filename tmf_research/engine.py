@@ -250,6 +250,9 @@ class ResearchEngine:
                        '"requirements":[{"text":"...","acceptance":"...","basis":["source IDs"]}],'
                        '"gaps":["..."]}. At most 5 findings and 5 requirements. Static code inspection is not runtime proof. '
                        'No external factual finding without a supplied source and exact supporting quote. Proposals need no quote. '
+                       'Each finding must make ONE independently checkable assertion supported by its quote and nearby context. '
+                       'Do not bundle several fields, lifecycle rules, exceptions and design implications into one factual claim. '
+                       'Separate documented source behavior from proposed TMF controls or inferred business conclusions. '
                        'Quote only one short passage per finding; do not copy whole paragraphs.')
         results = []
         with ThreadPoolExecutor(max_workers=3) as pool:
