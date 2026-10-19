@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "title": "Payment allocation: synthetic software breakdown",
+  "question": "What can this tiny payment fixture establish, and what would a real system still need?",
+  "summary": "The original fixture keeps applied payment, remaining invoice balance and unapplied funds separate. This example demonstrates evidence-linked reporting, not a production payment integration.",
+  "sources": [
+    {
+      "id": "fixture",
+      "title": "Original payment.mjs fixture and four executable assertions",
+      "state": "available",
+      "retrieved_at": "2026-10-19T06:28:55.508238+00:00",
+      "artifact_sha256": "0fcf44a07bcc968f242805bd97362a0b80c002b8e8467f332c1a205efcec6fc1",
+      "scope": "One original function; partial payment, overpayment, negative input and fractional input assertions ran through Node.",
+      "limitations": "No processor, database, concurrent request, tax or invoice lifecycle is implemented."
+    },
+    {
+      "id": "rea1",
+      "title": "REA static JavaScript analysis of examples directory",
+      "state": "partial",
+      "retrieved_at": "2026-10-19T06:28:55.511020+00:00",
+      "evidence_id": "ev_27cb37699202e5e636f75bce85cd5fece7e60e6fc29c02603ca48a0789ed8833",
+      "scope": "Inert syntax inspection through the actual REA CLI.",
+      "limitations": "Static analysis does not execute the function or establish production behavior; full raw output is generated locally and not redistributed."
+    }
+  ],
+  "findings": [
+    {
+      "label": "observed",
+      "text": "A partial payment of 3000 against a balance of 10000 leaves 7000 remaining and no unapplied funds.",
+      "sources": [
+        "fixture"
+      ]
+    },
+    {
+      "label": "observed",
+      "text": "A payment of 15000 against a balance of 10000 applies 10000 and retains 5000 unapplied.",
+      "sources": [
+        "fixture"
+      ]
+    },
+    {
+      "label": "observed",
+      "text": "The fixture rejects negative or fractional minor-unit values in the executed assertions.",
+      "sources": [
+        "fixture"
+      ]
+    },
+    {
+      "label": "observed",
+      "text": "REA returned a structured static-analysis evidence envelope for the examples directory.",
+      "sources": [
+        "rea1"
+      ],
+      "caveat": "This establishes a real inspection ran, not that REA proved every business rule or any production workflow."
+    }
+  ],
+  "requirements": [
+    {
+      "id": "PAY-001",
+      "text": "Preserve received, allocated and unapplied amounts separately.",
+      "acceptance": "Partial and overpayment cases retain the original amounts and reconcile the allocation totals."
+    },
+    {
+      "id": "PAY-002",
+      "text": "Define duplicate-effect and reconciliation behavior before connecting a payment provider.",
+      "acceptance": "A provider timeout and repeated notification do not create duplicate money movement; durable provider readback resolves uncertainty."
+    }
+  ],
+  "unknowns": [
+    "Provider authorization, capture, settlement, refund and dispute handling.",
+    "Persistent allocation records, concurrent updates, client isolation and audit history.",
+    "Jurisdiction-specific tax, accounting and payment obligations.",
+    "Human review is still required to assess whether findings are supported by their sources."
+  ]
+}

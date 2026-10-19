@@ -1,0 +1,30 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>TMF Research report</title><style>body{font:17px/1.65 system-ui,sans-serif;max-width:860px;margin:48px auto;padding:0 24px;color:#17212b;background:#fafafa}h1{line-height:1.15;font-size:40px}h2{margin-top:36px}p{overflow-wrap:anywhere}@media print{body{font-size:11pt;margin:0;max-width:none}h2{break-after:avoid}p{orphans:3;widows:3}}</style><body><h1>Payment allocation: synthetic software breakdown</h1>
+<p>What can this tiny payment fixture establish, and what would a real system still need?</p>
+<h2>Summary</h2>
+<p>The original fixture keeps applied payment, remaining invoice balance and unapplied funds separate. This example demonstrates evidence-linked reporting, not a production payment integration.</p>
+<p>Evidence labels describe the input. Validation checks structure and references; it does not verify the truth of a claim.</p>
+<h2>Findings</h2>
+<p>[OBSERVED] A partial payment of 3000 against a balance of 10000 leaves 7000 remaining and no unapplied funds. (fixture)</p>
+<p>[OBSERVED] A payment of 15000 against a balance of 10000 applies 10000 and retains 5000 unapplied. (fixture)</p>
+<p>[OBSERVED] The fixture rejects negative or fractional minor-unit values in the executed assertions. (fixture)</p>
+<p>[OBSERVED] REA returned a structured static-analysis evidence envelope for the examples directory. (rea1)</p>
+<p>Limit: This establishes a real inspection ran, not that REA proved every business rule or any production workflow.</p>
+<h2>Proposed requirements and acceptance</h2>
+<p>PAY-001: Preserve received, allocated and unapplied amounts separately.</p>
+<p>Acceptance: Partial and overpayment cases retain the original amounts and reconcile the allocation totals.</p>
+<p>PAY-002: Define duplicate-effect and reconciliation behavior before connecting a payment provider.</p>
+<p>Acceptance: A provider timeout and repeated notification do not create duplicate money movement; durable provider readback resolves uncertainty.</p>
+<h2>Unknowns and remaining work</h2>
+<p>Provider authorization, capture, settlement, refund and dispute handling.</p>
+<p>Persistent allocation records, concurrent updates, client isolation and audit history.</p>
+<p>Jurisdiction-specific tax, accounting and payment obligations.</p>
+<p>Human review is still required to assess whether findings are supported by their sources.</p>
+<h2>Evidence register</h2>
+<p>fixture — Original payment.mjs fixture and four executable assertions [available]; retrieved 2026-10-19T06:28:55.508238+00:00</p>
+<p>artifact_sha256: 0fcf44a07bcc968f242805bd97362a0b80c002b8e8467f332c1a205efcec6fc1</p>
+<p>scope: One original function; partial payment, overpayment, negative input and fractional input assertions ran through Node.</p>
+<p>limitations: No processor, database, concurrent request, tax or invoice lifecycle is implemented.</p>
+<p>rea1 — REA static JavaScript analysis of examples directory [partial]; retrieved 2026-10-19T06:28:55.511020+00:00</p>
+<p>evidence_id: ev_27cb37699202e5e636f75bce85cd5fece7e60e6fc29c02603ca48a0789ed8833</p>
+<p>scope: Inert syntax inspection through the actual REA CLI.</p>
+<p>limitations: Static analysis does not execute the function or establish production behavior; full raw output is generated locally and not redistributed.</p></body></html>

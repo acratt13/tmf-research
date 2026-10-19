@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "TMF Research \u2014 proposed architecture",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1300,
+      620
+    ]
+  },
+  "components": [
+    {
+      "id": "planner",
+      "type": "backend",
+      "label": "Research lead",
+      "sublabel": "Questions, scope and budget",
+      "pos": [
+        510,
+        30
+      ],
+      "size": [
+        250,
+        88
+      ]
+    },
+    {
+      "id": "web",
+      "type": "external",
+      "label": "Web research",
+      "sublabel": "Sources and competing claims",
+      "pos": [
+        200,
+        175
+      ],
+      "size": [
+        250,
+        88
+      ]
+    },
+    {
+      "id": "rea",
+      "type": "external",
+      "label": "REA inspection",
+      "sublabel": "Artifacts and observed behavior",
+      "pos": [
+        510,
+        175
+      ],
+      "size": [
+        250,
+        88
+      ]
+    },
+    {
+      "id": "documents",
+      "type": "external",
+      "label": "Document research",
+      "sublabel": "Selected files and references",
+      "pos": [
+        820,
+        175
+      ],
+      "size": [
+        250,
+        88
+      ]
+    },
+    {
+      "id": "evidence",
+      "type": "database",
+      "label": "Evidence ledger",
+      "sublabel": "Sources, coverage and unknowns",
+      "pos": [
+        510,
+        325
+      ],
+      "size": [
+        250,
+        88
+      ]
+    },
+    {
+      "id": "verify",
+      "type": "security",
+      "label": "Evidence review",
+      "sublabel": "Support, conflicts and gaps",
+      "pos": [
+        820,
+        325
+      ],
+      "size": [
+        250,
+        88
+      ]
+    },
+    {
+      "id": "writer",
+      "type": "backend",
+      "label": "Report assembly",
+      "sublabel": "Audience and detail level",
+      "pos": [
+        820,
+        475
+      ],
+      "size": [
+        250,
+        88
+      ]
+    },
+    {
+      "id": "exports",
+      "type": "frontend",
+      "label": "Presentation adapters",
+      "sublabel": "Markdown, PDF and Archify",
+      "pos": [
+        510,
+        475
+      ],
+      "size": [
+        250,
+        88
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "planner",
+      "to": "web",
+      "label": "Investigate"
+    },
+    {
+      "from": "planner",
+      "to": "rea",
+      "label": "Inspect",
+      "labelDy": 45
+    },
+    {
+      "from": "planner",
+      "to": "documents",
+      "label": "Read"
+    },
+    {
+      "from": "web",
+      "to": "evidence",
+      "label": "Source records"
+    },
+    {
+      "from": "rea",
+      "to": "evidence",
+      "label": "REA evidence",
+      "labelDy": 45
+    },
+    {
+      "from": "documents",
+      "to": "verify",
+      "label": "Document findings",
+      "labelDy": 45
+    },
+    {
+      "from": "evidence",
+      "to": "verify",
+      "label": "Review packet",
+      "labelDy": -70
+    },
+    {
+      "from": "verify",
+      "to": "writer",
+      "label": "Findings and gaps",
+      "labelDy": 45
+    },
+    {
+      "from": "writer",
+      "to": "exports",
+      "label": "Structured report",
+      "labelDy": -70
+    }
+  ]
+}
