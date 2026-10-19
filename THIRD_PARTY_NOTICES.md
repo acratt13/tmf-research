@@ -40,3 +40,7 @@ Optional PDF dependency, not vendored. Its own license and terms apply.
 ## War Council skill inspiration
 
 TMF Council's critical-perspective approach was informed by the War Council shared-example skill, copyright (c) 2026 Zapier, Inc., MIT licensed. Original license and notice are preserved in `third_party/war-council/`. TMF Council's research orchestration and role contracts are original project code. No Zapier affiliation or endorsement is implied; simulated roles are not real advisors.
+
+## DesignCraft
+
+Optional external presentation engine, not bundled. Upstream: https://github.com/storytold/designcraft (MIT OR Apache-2.0). Tested CLI 0.9.0 was privately staged and verified against the upstream release SHA256SUMS. Its bundled fonts retain their own licenses. Generated workflow content and scripts are original TMF Research output.

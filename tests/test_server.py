@@ -35,6 +35,13 @@ class ServerTests(unittest.TestCase):
             headers={'Content-Type':'application/json','X-TMF-Token':getattr(self,'token',''),**headers}
         data=json.dumps(payload).encode() if payload is not None else None
         with urllib.request.urlopen(urllib.request.Request(self.base+path,data=data,headers=headers),timeout=3) as r:return json.load(r)
+    def test_json_artifact_download_preserves_saved_bytes(self):
+        for name in ('builder-pack.json','export-receipt.json'):
+            with self.subTest(name=name):
+                with urllib.request.urlopen(self.base+'/outputs/'+self.rid+'/'+name,timeout=3) as response:
+                    self.assertEqual(response.headers['Content-Type'],'application/json')
+                    self.assertIn('attachment',response.headers['Content-Disposition'])
+                    self.assertEqual(response.read(),(self.store.directory(self.rid)/'outputs'/name).read_bytes())
     def test_origin_token_and_terminal_cancel_guards(self):
         for headers in [{'Origin':'https://evil.example'},{'X-TMF-Token':'wrong'}]:
             with self.assertRaises(urllib.error.HTTPError) as caught:self.request('/api/brief',{'question':'Investigate this workflow'},**headers)

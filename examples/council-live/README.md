@@ -7,6 +7,7 @@ This result was produced by the local research workflow, rather than manually au
 - [Research report](report.md) / [PDF](report.pdf) / [editable document](report.docx)
 - [Requirements workbook](requirements.xlsx)
 - [Editable briefing](briefing.pptx)
+- Proposed workflow: [PNG](workflow.png), [PDF](workflow.pdf), [editable DesignCraft](workflow.designcraft), [generation script](workflow-script.json)
 - [Structured report](report.json), [raw Council perspectives](council.json), [verification summary](verification.json)
 
 ![Generated document, first page](report-preview.png)
@@ -19,7 +20,9 @@ Research and initial exports took 340 seconds in this observed run. CLI usage re
 
 Actual WordCraft/GridCraft/DeckCraft engines produced the Office files. Independent DOCX XML retained title, sources and unknowns; independent CSV readback matched every one of the 14 requirement rows. PPTX contained 12 slides with full source URLs and caveats in notes. PDF text was read, and the document first page plus selected slide renders were visually reviewed. Native editor operation and Microsoft interoperability were not tested.
 
-The proposed workflow diagram failed Archify desktop-readability/layout validation and was not delivered as a successful output. Failed candidates and export receipts remain in the local run; the adapter correctly reports unavailable rather than presenting a misleading diagram. Remaining diagram work is tracked separately from accepted research and working Office exports.
+The initial Archify diagram failed readability/layout validation and was withheld. A later accepted-revision export used DesignCraft CLI 0.9.0 through the real browser workbench, with no new investigation or model calls. All six complete steps and the evidence boundary were preserved; native story-length and overflow checks passed, and preflight reported zero errors and warnings. The PNG was visually read, downloaded files matched their receipt hashes, and a separate native-document edit/save/reopen probe passed through the CLI. Native graphical editor interaction and print production color validation were not tested. Original failed candidates and receipts remain local. The research remains partial because three claims are uncertain.
+
+![DesignCraft proposed workflow](workflow.png)
 
 A preceding development run also exposed a useful review rejection: the writer promoted SDK-version metadata into an unsupported conclusion. That narrative was withheld. Subsequent hardening covered exact evidence hashes, source provenance, pinned HTTPS, process output/deadline bounds, rejected-synthesis fallback, cancellation races and accepted-revision re-export.
 

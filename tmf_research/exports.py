@@ -9,6 +9,41 @@ from .cli import dump, html_report, markdown, pdf_report, report_lines
 from .processes import bounded_run
 
 
+def designcraft_script(record, synthesis):
+    """Editable vertical workflow; bounded text fails explicitly rather than clipping."""
+    steps=synthesis.get('workflow_steps',[])
+    if not 2 <= len(steps) <= 6:raise ValueError('Workflow needs two to six steps')
+    commands=[]
+    def add(command, **params):
+        commands.append({'command':command,'params':params});return len(commands)-1
+    add('file.new',intent='web',width=800,height=1060,pages=1,facingPages=False,margins=0,title='Proposed research workflow')
+    for name,color in [('Ink','#142638'),('Muted','#486171'),('Teal','#087F82'),('Card','#EAF4F3')]:
+        add('swatch.create',name=name,color=color)
+    def text(rect,value,size,color):
+        step=add('frame.create',rect=rect,content='text',text=value)
+        add('text.select',story=f'${step}.story',anchor=0,focus=len(value.encode('utf-8')))
+        add('type.char',attrs={'fontFamily':'Arial','size':size,'fill':color})
+        add('type.para',attrs={'hyphenate':False})
+    title=str(record['title'])
+    if len(title)>220:raise ValueError('Diagram title exceeds template capacity')
+    text([42,25,758,52],'TMF COUNCIL / PROPOSED WORKFLOW',12,'Teal')
+    text([42,57,758,130],title,22,'Ink')
+    for i,step in enumerate(steps):
+        label=str(step.get('label',''));detail=str(step.get('detail',''))
+        if not label or len(label)>110 or len(detail)>420:raise ValueError('Workflow text exceeds template capacity')
+        y=145+i*132
+        box=add('frame.create',rect=[42,y,758,y+108],content='unassigned')
+        add('object.fill',ids=[f'${box}.id'],swatch='Card')
+        text([58,y+12,742,y+42],f'{i+1:02d}  '+label,16,'Ink')
+        text([58,y+45,742,y+100],detail,12,'Muted')
+        if i<len(steps)-1:
+            line=add('path.create',anchors=[{'p':[400,y+110]},{'p':[400,y+130]}],closed=False)
+            add('object.stroke',ids=[f'${line}.id'],swatch='Teal',weight=2,end='triangle')
+    text([42,955,758,1025],'EVIDENCE BOUNDARY / Proposed analysis, not an observed runtime.\nRead the report and builder pack for sources, acceptance conditions and unresolved decisions.',12,'Muted')
+    add('document.inspect');add('preflight.run')
+    return commands
+
+
 def export_run(directory, record, synthesis, formats, config, check_cancel=lambda:None):
     directory=Path(directory); out=directory/'outputs';out.mkdir(exist_ok=False)
     (directory/'published-analysis.json').write_text(dump(synthesis))
@@ -103,6 +138,25 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
                         cmd+=command('insert.textBox',{'rect':rect,'text':text})+command('format.fontDialog',{'family':'Inter','size':size,'color':color})
                     cmd+=command('slide.notes',{'text':notes})
                 run(cmd+['--save',str(out/'briefing.pptx')]);retain('briefing.pptx')
+            elif fmt=='diagram' and craft.get('designcraft'):
+                exe=craft['designcraft']
+                script=out/'workflow-script.json'
+                commands=designcraft_script(record,synthesis)
+                script.write_text(dump(commands))
+                version=run([exe,'--version']).strip()
+                result=json.loads(run([exe,'script',str(script),'--save',str(out/'workflow.designcraft'),
+                                       '--export',str(out/'workflow.pdf'),'--export',str(out/'workflow.png')]))
+                (directory/'designcraft-delivery.json').write_text(dump({'renderer':version,'delivery':result}))
+                inspection=result['results'][-2]
+                preflight=result['results'][-1]
+                # Persist diagnostics before withholding a failed presentation.
+                stories=inspection.get('stories',[])
+                expected=[c['params']['text'] for c in commands if c['command']=='frame.create' and 'text' in c['params']]
+                if (len(stories)!=len(expected) or any(s.get('overset') is not False for s in stories)
+                    or [s.get('length') for s in stories]!=[len(t.encode('utf-8')) for t in expected]
+                    or preflight.get('issues')!=[] or preflight.get('errors')!=0 or preflight.get('warnings')!=0):
+                    raise ValueError('DesignCraft preflight or saved-text check failed')
+                for name in ('workflow-script.json','workflow.designcraft','workflow.pdf','workflow.png'):retain(name)
             elif fmt=='diagram':
                 prefix=config['archify']
                 if not isinstance(prefix,list) or not prefix or any(not isinstance(x,str) for x in prefix):raise ValueError('Invalid Archify command prefix')

@@ -3,7 +3,8 @@
   "craft": {
     "wordcraft": "/path/to/wordcraft-cli",
     "gridcraft": "/path/to/gridcraft-cli",
-    "deckcraft": "/path/to/deckcraft-cli"
+    "deckcraft": "/path/to/deckcraft-cli",
+    "designcraft": "/path/to/designcraft-cli"
   },
   "archify": ["node", "/path/to/archify/bin/archify.mjs"],
   "inspections": {

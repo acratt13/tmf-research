@@ -50,7 +50,7 @@ Use `--audience executive` for a shorter view. Caveats, unknowns and the evidenc
 
 ## Actual Office-engine trial
 
-**Integrated Council run:** [Read the generated research and verification](examples/council-live/README.md). Seventeen role calls, actual source retrieval and REA inspection, six critical perspectives, follow-up research, 16 accepted findings and 14 proposed requirements. Three uncertain claims were withheld; the example remains partial, with diagram quality work explicitly outstanding.
+**Integrated Council run:** [Read the generated research and verification](examples/council-live/README.md). Seventeen role calls, actual source retrieval and REA inspection, six critical perspectives, follow-up research, 16 accepted findings and 14 proposed requirements. Three uncertain claims were withheld; the example remains partial, with a separately verified DesignCraft workflow export.
 
 **Real service study:** [Customer-service automation pilot](examples/customer-service-study/README.md) — official vendor research and actual REA SDK inspection turned into a build blueprint, 32 acceptance requirements, editable Office files and an interactive workflow. Research was operator-assisted; the repository did not autonomously investigate the subject.
 
@@ -91,7 +91,7 @@ Import deliberately starts with **zero asserted findings** and partial/unreviewe
 | Proposed architecture diagram | Generated with Archify; artifact and bounded desktop-browser checks passed |
 | Lead, scout, specialist, reviewer, Council and writer roles | Connected local role calls; same-provider model review, not factual certification |
 | Iterative web search/fetch and retained source evidence | Native web-search events checked; bounded HTTPS snapshots and selected follow-up research |
-| Archify runtime/export adapter | Configurable proposed-workflow generation with showcase validation/delivery |
+| Workflow export adapters | DesignCraft editable document, PDF and PNG with preflight checks; legacy Archify showcase adapter |
 | WordCraft / GridCraft / DeckCraft outputs | Configurable local CLI adapters; document/workbook readback and citation/caveat preservation; native GUI/Microsoft interoperability not established |
 | Research UI and durable runs | Loopback workbench, composable lenses, preset, live stages, result files and saved history |
 | Hosted multi-client service, document uploads and automatic KB ingestion | Not implemented |

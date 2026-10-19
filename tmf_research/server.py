@@ -22,7 +22,7 @@ def serve(root, config=None, port=8765):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
         def reply(self,status,data,content_type='application/json',download=None):
-            body=json.dumps(data).encode() if content_type=='application/json' else data
+            body=data if isinstance(data,bytes) else json.dumps(data).encode()
             self.send_response(status);self.send_header('Content-Type',content_type)
             self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store')
             self.send_header('X-Content-Type-Options','nosniff')

@@ -28,6 +28,30 @@
     "council.json": "84e55f74923ed2dea8807eaa2106195ffa934ecb70c63fd624a26838c657e86e",
     "briefing.pptx": "22e8a42a1bef8f150874749863d04057c734bc2ca6b9a52cf83add0fc4df18d0",
     "report.pdf": "bea2622a9f15547ca721993d8c4d50c8c15fb0294e46f3cc482bff13dec73b14",
-    "requirements.xlsx": "380913042f8bb7353344a49065bcef3ffde306fb12e6171910d7c8f2d58154ab"
+    "requirements.xlsx": "380913042f8bb7353344a49065bcef3ffde306fb12e6171910d7c8f2d58154ab",
+    "workflow-script.json": "ebf16355b729d5a25ded77fda8bfcec3379a3588466227a41a3610bda01f483e",
+    "workflow.designcraft": "72a416b6aacef0d61689672de4ea7bd89bc4e1977526c774c42a5fcc8314283a",
+    "workflow.pdf": "c702fecce75ff6534efd6a65d6c5e7501e2336a5457d5d0e9a894af9cfcfb917",
+    "workflow.png": "4b0033bc3f090319405caf2497deef292502810c77c70653dc66d4514ce19437"
+  },
+  "diagram": {
+    "engine": "DesignCraft CLI 0.9.0",
+    "release_archive_sha256": "1c11a863755b9eb38209c8521bd46c42888260179f016a125b3ba5d293c0cb84",
+    "kind": "Proposed accepted-revision workflow; no new model calls",
+    "preflight": {
+      "errors": 0,
+      "warnings": 0,
+      "overset_stories": 0
+    },
+    "checks": [
+      "Actual browser re-export",
+      "Download hashes match export receipt",
+      "PNG visually read",
+      "Native document reopened, edited, saved and reopened via CLI"
+    ],
+    "not_tested": [
+      "Native graphical editor interaction",
+      "Print production color validation"
+    ]
   }
 }

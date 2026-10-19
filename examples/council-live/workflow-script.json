@@ -1,0 +1,916 @@
+[
+  {
+    "command": "file.new",
+    "params": {
+      "intent": "web",
+      "width": 800,
+      "height": 1060,
+      "pages": 1,
+      "facingPages": false,
+      "margins": 0,
+      "title": "Proposed research workflow"
+    }
+  },
+  {
+    "command": "swatch.create",
+    "params": {
+      "name": "Ink",
+      "color": "#142638"
+    }
+  },
+  {
+    "command": "swatch.create",
+    "params": {
+      "name": "Muted",
+      "color": "#486171"
+    }
+  },
+  {
+    "command": "swatch.create",
+    "params": {
+      "name": "Teal",
+      "color": "#087F82"
+    }
+  },
+  {
+    "command": "swatch.create",
+    "params": {
+      "name": "Card",
+      "color": "#EAF4F3"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        25,
+        758,
+        52
+      ],
+      "content": "text",
+      "text": "TMF COUNCIL / PROPOSED WORKFLOW"
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$5.story",
+      "anchor": 0,
+      "focus": 31
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 12,
+        "fill": "Teal"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        57,
+        758,
+        130
+      ],
+      "content": "text",
+      "text": "TMF customer-service pilot: recovery and confirmed human takeover"
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$9.story",
+      "anchor": 0,
+      "focus": 65
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 22,
+        "fill": "Ink"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        145,
+        758,
+        253
+      ],
+      "content": "unassigned"
+    }
+  },
+  {
+    "command": "object.fill",
+    "params": {
+      "ids": [
+        "$13.id"
+      ],
+      "swatch": "Card"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        157,
+        742,
+        187
+      ],
+      "content": "text",
+      "text": "01  PROPOSED — Validate value"
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$15.story",
+      "anchor": 0,
+      "focus": 31
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 16,
+        "fill": "Ink"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        190,
+        742,
+        245
+      ],
+      "content": "text",
+      "text": "Interview buyer/agents, sample permissioned tickets and agree baseline, outcome measures and purchase criteria."
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$19.story",
+      "anchor": 0,
+      "focus": 111
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 12,
+        "fill": "Muted"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "path.create",
+    "params": {
+      "anchors": [
+        {
+          "p": [
+            400,
+            255
+          ]
+        },
+        {
+          "p": [
+            400,
+            275
+          ]
+        }
+      ],
+      "closed": false
+    }
+  },
+  {
+    "command": "object.stroke",
+    "params": {
+      "ids": [
+        "$23.id"
+      ],
+      "swatch": "Teal",
+      "weight": 2,
+      "end": "triangle"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        277,
+        758,
+        385
+      ],
+      "content": "unassigned"
+    }
+  },
+  {
+    "command": "object.fill",
+    "params": {
+      "ids": [
+        "$25.id"
+      ],
+      "swatch": "Card"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        289,
+        742,
+        319
+      ],
+      "content": "text",
+      "text": "02  PROPOSED — Prove interface coverage"
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$27.story",
+      "anchor": 0,
+      "focus": 41
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 16,
+        "fill": "Ink"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        322,
+        742,
+        377
+      ],
+      "content": "text",
+      "text": "Verify recovery history and channel send contracts; compare overlay, native automation and replacement. Decide feasibility before delivery commitment."
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$31.story",
+      "anchor": 0,
+      "focus": 150
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 12,
+        "fill": "Muted"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "path.create",
+    "params": {
+      "anchors": [
+        {
+          "p": [
+            400,
+            387
+          ]
+        },
+        {
+          "p": [
+            400,
+            407
+          ]
+        }
+      ],
+      "closed": false
+    }
+  },
+  {
+    "command": "object.stroke",
+    "params": {
+      "ids": [
+        "$35.id"
+      ],
+      "swatch": "Teal",
+      "weight": 2,
+      "end": "triangle"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        409,
+        758,
+        517
+      ],
+      "content": "unassigned"
+    }
+  },
+  {
+    "command": "object.fill",
+    "params": {
+      "ids": [
+        "$37.id"
+      ],
+      "swatch": "Card"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        421,
+        742,
+        451
+      ],
+      "content": "text",
+      "text": "03  PROPOSED — Specify the bounded pilot"
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$39.story",
+      "anchor": 0,
+      "focus": 42
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 16,
+        "fill": "Ink"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        454,
+        742,
+        509
+      ],
+      "content": "text",
+      "text": "Agree ownership, takeover, correction, privacy, staffing, capacity, costs and exit gates; begin draft-only."
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$43.story",
+      "anchor": 0,
+      "focus": 107
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 12,
+        "fill": "Muted"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "path.create",
+    "params": {
+      "anchors": [
+        {
+          "p": [
+            400,
+            519
+          ]
+        },
+        {
+          "p": [
+            400,
+            539
+          ]
+        }
+      ],
+      "closed": false
+    }
+  },
+  {
+    "command": "object.stroke",
+    "params": {
+      "ids": [
+        "$47.id"
+      ],
+      "swatch": "Teal",
+      "weight": 2,
+      "end": "triangle"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        541,
+        758,
+        649
+      ],
+      "content": "unassigned"
+    }
+  },
+  {
+    "command": "object.fill",
+    "params": {
+      "ids": [
+        "$49.id"
+      ],
+      "swatch": "Card"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        553,
+        742,
+        583
+      ],
+      "content": "text",
+      "text": "04  PROPOSED — Witness failure drills"
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$51.story",
+      "anchor": 0,
+      "focus": 39
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 16,
+        "fill": "Ink"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        586,
+        742,
+        641
+      ],
+      "content": "text",
+      "text": "Test missing events, duplicate effects, ambiguous sends, delayed-send races, failed takeover and correlated-outage capacity; retain results and limits."
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$55.story",
+      "anchor": 0,
+      "focus": 151
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 12,
+        "fill": "Muted"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "path.create",
+    "params": {
+      "anchors": [
+        {
+          "p": [
+            400,
+            651
+          ]
+        },
+        {
+          "p": [
+            400,
+            671
+          ]
+        }
+      ],
+      "closed": false
+    }
+  },
+  {
+    "command": "object.stroke",
+    "params": {
+      "ids": [
+        "$59.id"
+      ],
+      "swatch": "Teal",
+      "weight": 2,
+      "end": "triangle"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        673,
+        758,
+        781
+      ],
+      "content": "unassigned"
+    }
+  },
+  {
+    "command": "object.fill",
+    "params": {
+      "ids": [
+        "$61.id"
+      ],
+      "swatch": "Card"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        685,
+        742,
+        715
+      ],
+      "content": "text",
+      "text": "05  PROPOSED — Run and measure"
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$63.story",
+      "anchor": 0,
+      "focus": 32
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 16,
+        "fill": "Ink"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        718,
+        742,
+        773
+      ],
+      "content": "text",
+      "text": "Launch only within authorized scope and passed gates; track customer outcomes plus total review/recovery work, and enforce stop thresholds."
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$67.story",
+      "anchor": 0,
+      "focus": 139
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 12,
+        "fill": "Muted"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "path.create",
+    "params": {
+      "anchors": [
+        {
+          "p": [
+            400,
+            783
+          ]
+        },
+        {
+          "p": [
+            400,
+            803
+          ]
+        }
+      ],
+      "closed": false
+    }
+  },
+  {
+    "command": "object.stroke",
+    "params": {
+      "ids": [
+        "$71.id"
+      ],
+      "swatch": "Teal",
+      "weight": 2,
+      "end": "triangle"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        805,
+        758,
+        913
+      ],
+      "content": "unassigned"
+    }
+  },
+  {
+    "command": "object.fill",
+    "params": {
+      "ids": [
+        "$73.id"
+      ],
+      "swatch": "Card"
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        817,
+        742,
+        847
+      ],
+      "content": "text",
+      "text": "06  PROPOSED — Decide continuation or exit"
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$75.story",
+      "anchor": 0,
+      "focus": 44
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 16,
+        "fill": "Ink"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        58,
+        850,
+        742,
+        905
+      ],
+      "content": "text",
+      "text": "Compare results with the baseline, close owned exceptions and exit safely or separately contract further automation/managed operations."
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$79.story",
+      "anchor": 0,
+      "focus": 135
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 12,
+        "fill": "Muted"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "frame.create",
+    "params": {
+      "rect": [
+        42,
+        955,
+        758,
+        1025
+      ],
+      "content": "text",
+      "text": "EVIDENCE BOUNDARY / Proposed analysis, not an observed runtime.\nRead the report and builder pack for sources, acceptance conditions and unresolved decisions."
+    }
+  },
+  {
+    "command": "text.select",
+    "params": {
+      "story": "$83.story",
+      "anchor": 0,
+      "focus": 157
+    }
+  },
+  {
+    "command": "type.char",
+    "params": {
+      "attrs": {
+        "fontFamily": "Arial",
+        "size": 12,
+        "fill": "Muted"
+      }
+    }
+  },
+  {
+    "command": "type.para",
+    "params": {
+      "attrs": {
+        "hyphenate": false
+      }
+    }
+  },
+  {
+    "command": "document.inspect",
+    "params": {}
+  },
+  {
+    "command": "preflight.run",
+    "params": {}
+  }
+]
