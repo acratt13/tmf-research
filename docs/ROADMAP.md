@@ -4,6 +4,8 @@ Status checked 2026-10-20. This is the public product roadmap; live project owne
 decisions and work tracking remain in MC Canon. Future items below are plans, not
 released features or delivery-date promises.
 
+Full cross-job scope: [intelligence and production bundle](INTELLIGENCE-PRODUCTION-BUNDLE.md) and [machine-readable capability map](intelligence-production-bundle.json).
+
 ## Product direction
 
 A useful standalone research tool that produces real, editable deliverables. It

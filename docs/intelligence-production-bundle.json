@@ -1,0 +1,306 @@
+{
+  "schema": "tmf-intelligence-production-bundle/v1",
+  "as_of": "2026-10-20",
+  "name": "TMF intelligence and production capability bundle",
+  "naming": "Descriptive bundle title; no product rename. Existing project remains tmf-research.",
+  "purpose": "Collect information, understand systems and opportunities, produce useful knowledge/design/document assets, and hand actionable work to the appropriate MC owners.",
+  "canonical_context": {
+    "system": "Live MC Canon",
+    "direction_record": "cn-dcd0944c-129a-4e1d-a94f-c2fe6447d22f",
+    "lane": "cn-a4f3f9ad-6b9d-4f9d-9728-1815e7efb1fd"
+  },
+  "status_definitions": {
+    "source-documented": "Existing repository documentation/source describes this; not a fresh end-to-end verification in this bundle task.",
+    "observed-pilot": "A bounded local path was exercised in this conversation; not general release or MC acceptance.",
+    "partial": "Some source, artifacts or bounded functionality exist; the complete capability/acceptance is unfinished.",
+    "intended": "Agreed intended use; no completed connected path is claimed."
+  },
+  "capabilities": [
+    {
+      "id": "research",
+      "name": "Research and investigation",
+      "purpose": "Understand, compare, build, audit and offer-service lenses; fast collection or bounded deep investigation; source comparison, contradictions and follow-up.",
+      "status": "source-documented",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "A repeatable investigation answers its stated question with readable sources and visible gaps."
+    },
+    {
+      "id": "council",
+      "name": "Specialists and optional TMF Council",
+      "purpose": "Select systems, full-stack, design-system, business, marketing/SEO, customer-service and domain perspectives to fit the job. A scrape and one specialist can be enough.",
+      "status": "source-documented",
+      "evidence": "docs/RESEARCH-WORKBENCH-SPEC.md",
+      "acceptance": "Selected roles receive the relevant evidence and return useful, reviewed contributions; role count is not a quality metric."
+    },
+    {
+      "id": "collection",
+      "name": "Web and repository collection",
+      "purpose": "Public sites, domains, documentation, GitHub, source code and explicitly selected local files; static text collection plus optional browser capture through Crawlee. Python Crawlee remains an adapter option, not a required rewrite.",
+      "status": "partial",
+      "evidence": "plugins/crawlee/README.md",
+      "acceptance": "Retained originals, timestamps, source identities, failures and reproducible readback; one acquisition path can feed multiple job types."
+    },
+    {
+      "id": "inspection",
+      "name": "Actual REA software inspection",
+      "purpose": "Use the real REA repository/CLI for packages, SDKs, local software and controlled website observations. Keep static, runtime and derived findings distinct.",
+      "status": "observed-pilot",
+      "evidence": "docs/design-component-workflow.md",
+      "acceptance": "Preserve exact target/version, REA envelope, evidence IDs, limitations and the behavior actually exercised."
+    },
+    {
+      "id": "system-map",
+      "name": "Whole-system breakdown and audits",
+      "purpose": "Map components, owners, data, permissions, state, lifecycle, connections and workflows before recommending individual plugins. Work with any supplied system; MC/DSH is an internal use case.",
+      "status": "partial",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "A professional can follow the connection map and ordered implementation jobs without reconstructing missing assumptions."
+    },
+    {
+      "id": "plugin-ecosystem",
+      "name": "Plugin ecosystem planning",
+      "purpose": "Inspect installed capabilities and catalogs first; compare reuse, adaptation and composition. Determine manifests, dependencies, host/UI contracts, overlaps and lifecycle gaps.",
+      "status": "partial",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "Evidence-backed stack, compatibility gaps and lifecycle proof gates; Studio and Maintainer retain their responsibilities."
+    },
+    {
+      "id": "visual-studies",
+      "name": "Visual reference studies",
+      "purpose": "Real sites/apps, dashboards, widgets, screens, flows and illustrations, organized using existing source categories. Pinterest and Refs.Gallery support discovery of original sources.",
+      "status": "observed-pilot",
+      "evidence": "docs/design-component-workflow.md",
+      "acceptance": "Human sees the whole screen, its meaningful parts, palette/type and behavior; DESIGN.md connects the same evidence for the agent."
+    },
+    {
+      "id": "motion-scenes",
+      "name": "Motion and scene studies",
+      "purpose": "Keep motion playable and separate from static screen evidence. Study triggers, states, responsive behavior, camera/scene layers and interaction sequences where observable.",
+      "status": "partial",
+      "evidence": "docs/design-component-workflow.md",
+      "acceptance": "Observed interaction and retained evidence identify what is known; still images do not establish timing or editable scene source."
+    },
+    {
+      "id": "design-handoff",
+      "name": "Design-to-build handoff",
+      "purpose": "Produce linked visual parts, DESIGN.md, tokens/component JSON and reconstruction guidance. Optional independently implemented components have contracts and live examples.",
+      "status": "observed-pilot",
+      "evidence": "docs/design-component-workflow.md",
+      "acceptance": "Use a couple of packs in a separate real build, then test design tools and MC canvas editing/save/reopen before scaling."
+    },
+    {
+      "id": "business-software",
+      "name": "Professional software and workflow references",
+      "purpose": "Accounting/QuickBooks-style products, invoicing, reconciliation, CRM, support, payroll/tax, inventory, ecommerce, payments, office operations and workspaces.",
+      "status": "partial",
+      "evidence": "docs/SERVICE-SPEC.md",
+      "acceptance": "Combine interface references with data, workflow states, validation, exceptions, permissions, integrations, audit trail and operational requirements."
+    },
+    {
+      "id": "market",
+      "name": "Market, competition and offer discovery",
+      "purpose": "Break down demand and competition, what sells in AI automation, trends, positioning and gaps. Compare evidenced current delivery capability against market needs before choosing prospect criteria.",
+      "status": "intended",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "A specific offer, buyer problem, differentiation and evidence-based delivery/readiness gaps emerge from the analysis."
+    },
+    {
+      "id": "prospects",
+      "name": "Prospect and contact intelligence",
+      "purpose": "Find businesses from research or supplied domains; collect public business contact routes, emails and phones with provenance; deduplicate and qualify for the specific service.",
+      "status": "intended",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "Audit a real sample row by row. Explain priority, disqualifiers and missing information; do not present a heuristic as a calibrated purchase probability."
+    },
+    {
+      "id": "buyer-needs",
+      "name": "Explicit buyer-need discovery",
+      "purpose": "Find real requests/problems through supported public access to LinkedIn, Upwork, Fiverr, X and other relevant sources. Separate buyer requests from job listings, complaints and seller advertisements.",
+      "status": "intended",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "Original request, date, stated constraints/budget and legitimate response route are retained; each platform needs a demonstrated access path."
+    },
+    {
+      "id": "service-products",
+      "name": "Service readiness and product blueprints",
+      "purpose": "Audit opportunities, customer service/call-center automation, commerce, payments, office management, payroll/tax and security/assurance requirements. Define sellable scoped services and professional software specifications.",
+      "status": "partial",
+      "evidence": "docs/SERVICE-SPEC.md",
+      "acceptance": "Requirements, prerequisite skills/providers, acceptance, costs, support, risk and delivery ownership are explicit; research does not certify compliance or establish readiness."
+    },
+    {
+      "id": "knowledge",
+      "name": "Role and job knowledge packs",
+      "purpose": "Human-readable operational guidance plus versioned RAG-ready chunks, examples, decision rules, provenance, jurisdiction/product scope, freshness and approval.",
+      "status": "partial",
+      "evidence": "docs/KNOWLEDGE-PACKS.md",
+      "acceptance": "A realistic task retrieves the right passages, respects access/scope, recognizes gaps/staleness and improves a worker outcome."
+    },
+    {
+      "id": "staffing",
+      "name": "Agent creation and professional role enablement",
+      "purpose": "Help define professional roles, job knowledge, tool requirements and evaluations; make knowledge available to the existing agent creator and role infrastructure.",
+      "status": "intended",
+      "evidence": "docs/KNOWLEDGE-PACKS.md",
+      "acceptance": "Create a role through its existing owner and prove access to the correct pack/tool set. Builders and agents remain separate."
+    },
+    {
+      "id": "knowledge-store",
+      "name": "Knowledge/database organization",
+      "purpose": "Normalize evidence, chunks, references and artifacts for existing MC stores and client-scoped knowledge. Preserve ownership, deduplication, revisions and retrieval identifiers.",
+      "status": "intended",
+      "evidence": "docs/KNOWLEDGE-PACKS.md",
+      "acceptance": "Reviewed ingestion and retrieval readback work through the existing owner; no competing database or TMF Brain Engine access."
+    },
+    {
+      "id": "documents",
+      "name": "Real document production",
+      "purpose": "Purpose-specific Markdown/HTML, PDF, DOCX, XLSX/CSV, PPTX, diagrams and builder JSON; briefs, audits, specifications, company intelligence, proposals and knowledge packs.",
+      "status": "partial",
+      "evidence": "docs/OFFICE-ADAPTERS.md",
+      "acceptance": "Generate a real file, retain editable inputs and citations, open/read it and save/reopen it with a supported tool."
+    },
+    {
+      "id": "current-intelligence",
+      "name": "Current-topic and financial intelligence",
+      "purpose": "Watch technology, AI services, products, markets, stocks and crypto; produce sourced dated comparisons, risk/uncertainty and current summaries.",
+      "status": "intended",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "Show source date, observation time and scope; informational research does not imply execution of trades or account actions."
+    },
+    {
+      "id": "scheduled-jobs",
+      "name": "Recurring collection and refresh",
+      "purpose": "Bounded schedules for references, market/source changes, leads and knowledge refresh. Reuse unchanged evidence; queue a relevant specialist after collection.",
+      "status": "partial",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "A scheduled job has finite budgets, lifecycle/stop handling, failure receipts, change detection and quiet notifications when unchanged. Visual scale-up is currently paused."
+    },
+    {
+      "id": "builder-jobs",
+      "name": "Builder tickets and operational handoff",
+      "purpose": "Produce ordered implementation tickets, prerequisites, contracts and acceptance tests. Intended MC automation can trigger work on incoming builds and check repair/backlog tickets during downtime.",
+      "status": "intended",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "Existing builder/ticket owners receive and acknowledge the job, execute it and return real proof; research does not replace the builder runtime."
+    },
+    {
+      "id": "workflow-recipes",
+      "name": "Reusable workflow recipes",
+      "purpose": "Support simple collection-to-specialist jobs and richer node workflows for complex builder work; evaluate existing Paperclip/workflow plugins before inventing an engine.",
+      "status": "intended",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "One complete job runs through existing workflow/tool owners with observable stages, cancellation, durable state and recovery."
+    },
+    {
+      "id": "quality-learning",
+      "name": "Quality, context and learning from outcomes",
+      "purpose": "Keep reviewed versions, failed captures, corrections, successful retrieval/build results and feedback. Use them to improve future selection, packs and evaluation.",
+      "status": "partial",
+      "evidence": "docs/VERIFICATION.md",
+      "acceptance": "Measure supported claims, task completion, retrieval quality, useful contacts/build outcomes and cost. Stored activity is not proof of learning or model training."
+    },
+    {
+      "id": "mc-integration",
+      "name": "Connected MC use",
+      "purpose": "Link & Sync connects capabilities and lifecycle; Canon supplies context; existing role/KB/ticket/tool owners consume results; canvas hosts visual work and actual editors.",
+      "status": "intended",
+      "evidence": "docs/ROADMAP.md",
+      "acceptance": "In real MC: select sources/packs \u2192 authorized tool use \u2192 build/edit on canvas \u2192 save \u2192 reopen/restart/reconnect \u2192 stop safely, with readback."
+    },
+    {
+      "id": "distribution",
+      "name": "Standalone product and TMF service offering",
+      "purpose": "Keep the MIT project useful outside MC with installation, configuration, examples and real exports. Show its added value inside TMF Systems and use real results for marketing.",
+      "status": "partial",
+      "evidence": "README.md",
+      "acceptance": "A new user can install and complete a useful job. Publish only supported claims and appropriately licensed material; demand/revenue are not established by this bundle."
+    }
+  ],
+  "job_contract": {
+    "status": "proposed cross-job contract, not an installed scheduler API",
+    "required": [
+      "id/version",
+      "purpose and measurable outcome",
+      "job type and lenses",
+      "depth and specialist/Council selection",
+      "authorized sources and instance/client scope",
+      "selected context/pack versions",
+      "input evidence IDs",
+      "budgets: time/pages/bytes/model calls/cost",
+      "output kinds/audience and artifact paths",
+      "actor/grant/approval references",
+      "owner and escalation route",
+      "state/stage/cancellation and restart policy",
+      "evidence/claim/review status",
+      "completion proof and actual readback",
+      "refresh/expiry and notification rules"
+    ],
+    "states": [
+      "queued",
+      "collecting",
+      "analyzing",
+      "producing",
+      "awaiting-review",
+      "accepted",
+      "partial",
+      "failed",
+      "cancelled",
+      "interrupted"
+    ],
+    "rules": [
+      "Completion, review and acceptance are separate.",
+      "No page/source text selects shell commands or grants authority.",
+      "External actions require their own authorization and operation-specific reconciliation.",
+      "Never overwrite accepted knowledge or user artifacts silently."
+    ]
+  },
+  "roles": {
+    "lead": "Scope, route and coordinate only as deeply as needed.",
+    "collector": "Gather and normalize evidence.",
+    "specialist": "Analyze a relevant profession/domain.",
+    "council": "Optional critical perspectives for complex or consequential questions.",
+    "reviewer": "Check support, coverage, limitations and readiness.",
+    "producer": "Generate the requested real files and linked visual studies.",
+    "consumer": "User, authorized agent or builder through their existing owner."
+  },
+  "integration_ownership": {
+    "Canon": "Current decisions, context and checkpoints.",
+    "Link & Sync": "Connections, capability availability and lifecycle contracts.",
+    "EMS": "Authoritative settings.",
+    "existing knowledge owners": "Approval, storage, client boundaries and retrieval.",
+    "existing design catalog/MCP": "Design-reference categories and retrieval; no second competing catalog.",
+    "Plugin Studio": "Assess/select/combine compatible donor parts into plugins.",
+    "Maintainer": "Plugin installation/readiness/updates/repair/testing/security responsibilities.",
+    "builders": "Build, fix and integrate through the existing shared builder workspace and ticket system.",
+    "agents": "Assigned operational roles with their own profiles/grants.",
+    "chat/canvas": "Conversation in chat; visual tools, boards, previews and actual editing on the canvas."
+  },
+  "current_priority": [
+    "Preserve the existing overall app/library design; pilot builds stay separate.",
+    "Finish a couple of human-visible reference packs and test a separate build from their DESIGN.md files.",
+    "Review output quality before automating this design workflow or resuming scale-up.",
+    "Add professional business-software workflows and hidden requirements, not only marketing pages.",
+    "Prove design tools + packs + builder + canvas + persistence inside actual MC."
+  ],
+  "deferred_inputs": [
+    "Locate the existing diagrams/plugin-information repository before substituting anything.",
+    "Recover the exact TMF-leads note/email through explicitly selected connected Outlook access when that job resumes.",
+    "Confirm current installed plugin/tool/grant readiness through Link & Sync; historical surveys are not live health."
+  ],
+  "commercial_boundary": [
+    "Free MIT standalone product remains useful.",
+    "Connected design/knowledge production and custom integration are potential service value.",
+    "Pricing, willingness to pay, revenue and launch performance require actual evaluation."
+  ],
+  "snapshot": {
+    "gallery_site_app_captures": 19,
+    "separate_motion_captures": 21,
+    "unavailable_retained": 11,
+    "visual_collection_schedule": "paused until pilot review",
+    "pilot": "NK and PostHog packs plus an original separate Reference Desk build; build acceptance not complete",
+    "automatic_semantic_design_pipeline": "not implemented",
+    "bulk_mc_ingestion": "not performed",
+    "reused_components": "Independent story-card activation/host-selection proof exists; original 3D gallery source not recovered"
+  }
+}
