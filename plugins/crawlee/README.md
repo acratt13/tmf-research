@@ -48,3 +48,21 @@ Each source retains URL, retrieval time, body/text hashes, extraction limitation
 - Dependencies are pinned in the lockfile. `npm audit` is one signal, not a security approval; unavailable independent scanning must be reported as unknown.
 
 See [knowledge-pack design](../../docs/KNOWLEDGE-PACKS.md) for the next layer: approved procedures and role-specific retrieval through the existing KB governance.
+
+## Optional visual-reference collector
+
+`visual.mjs` is a separate local CLI using Crawlee's PlaywrightCrawler and an existing Chromium installation. It does not upgrade the deployed text worker, expose a new MCP tool or ingest the MC design catalog. The optional pinned `playwright-core` dependency supplies browser control; no browser is downloaded automatically.
+
+```sh
+npm ci --ignore-scripts
+CHROME_PATH=/absolute/path/to/chromium node visual.mjs /absolute/manifest.json /absolute/output 5
+node visual-verify.mjs /absolute/output
+```
+
+The manifest has `target_count` (1–200) and up to 200 explicit `targets`. Each target requires a unique safe `id`, HTTPS `url`, `allowed_domains` including asset/font hosts, and a component CSS `selector`. Optional fields: `title`, `description`, `category`, `source_uri`, `source_text`, `license_status`, `hover_selector`. Public demo chrome should be excluded by the component selector. Never include credentials or authenticated sessions in this collector.
+
+Each invocation collects at most 20 targets, serially, up to the total requested count. Successful and unavailable attempts are retained; repeated invocations skip both. Add replacement targets for failures. A filesystem lock rejects overlapping invocations; after a crash, inspect its recorded PID before removing a stale lock. The collection ledger owns cross-batch progress; each invocation retains a separate Crawlee queue so old request counters do not suppress later batches. SIGINT/SIGTERM stops new work after the current request. Collection files are checkpointed after each target.
+
+The collector retains desktop/mobile/reduced-motion screenshots, two extra passive motion frames, computed component anatomy/styles/palette, Web Animations observations, provider source, per-file hashes, `DESIGN.md`, `design.json` and a searchable `index.html`. These are **captured, unreviewed studies**, not approved design guidance. Motion frames are not complete flow/gesture tests. If explicitly configured, a hover is exercised; there are no clicks or form submissions. Free source availability and redistribution permission are separate fields.
+
+Browser GET requests are fulfilled through bounded Node HTTPS requests with public-address DNS pinning, exact domain allowlists and per-host robots checks. Redirects, non-GET requests, WebSockets, downloads and service workers are refused. Limits: 160 requests/25 MB total per page, 6 MB per resource, three-second same-domain pacing, 90-second handler timeout. Missing component anatomy fails the target rather than counting an empty shell. Serve the output on loopback to review it; preserve the existing MC catalog as the ingestion owner.

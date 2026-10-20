@@ -10,5 +10,6 @@ dist/
 runs/
 .private/
 .DS_Store
+node_modules/
 docs/*.visual-check*
 docs/*-validation.json
