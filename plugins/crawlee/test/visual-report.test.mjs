@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateManifest,galleryHTML,designMarkdown,studyKind,selectTargets} from '../visual-report.mjs';
+import {validateManifest,galleryHTML,designMarkdown,studyKind,selectTargets,selectedComponents} from '../visual-report.mjs';
 const target={id:'reference-a',url:'https://example.com/demo',allowed_domains:['example.com'],selector:'main'};
+test('raw, hidden and missing-image crops never become selected references by existing',()=>{
+ const r={regions:[{id:'raw',screenshot:'raw.jpg'},{id:'hidden',screenshot:'hidden.jpg',curation:{status:'hidden'}},{id:'missing',curation:{status:'selected'}},{id:'useful',screenshot:'useful.jpg',curation:{status:'selected',reason:'Complete, distinct pattern'}}]};
+ assert.deepEqual(selectedComponents(r).map(c=>c.id),['useful']);
+});
 test('screen quota excludes motion studies and never recrawls attempted targets',()=>{
  const manifest={target_count:61,screen_target_count:2,targets:[target,{...target,id:'b'},{...target,id:'c'}]};
  const records=[{id:'motion-a',source_uri:'motion://examples/react/drag',state:'captured'},{id:'reference-a',kind:'site',state:'captured'},{id:'b',state:'unavailable'}];
