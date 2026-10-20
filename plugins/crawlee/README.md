@@ -1,12 +1,12 @@
 # Remote Crawlee collection worker
 
-This optional plugin collects public static HTML into retained evidence and source packs. It does not run the research council, qualify leads, send outreach, render JavaScript, interpret financial data or index a knowledge base.
+This optional plugin collects public static HTML, Markdown and plain text into retained evidence and source packs. It requests Markdown when the source supports it, retaining code samples and links as text. HTML pages retain scoped link discovery; Markdown/plain text do not automatically enqueue links. It does not run the research council, qualify leads, send outreach, render JavaScript, interpret financial data or index a knowledge base.
 
 ## Install
 
 Requires Docker on a remote Linux host, an existing SSH alias on the MC host, and Node 22+ for the small local bridge. Keep SSH credentials in your existing SSH mechanism.
 
-1. Copy this worker directory to the remote host. Build with `docker build -t tmf-crawlee:0.1.0 .`.
+1. Copy this worker directory to the remote host. Build with `docker build -t tmf-crawlee:0.1.1 .`.
 2. Create storage with `docker volume create tmf-crawlee-data`.
 3. Run the container:
 
@@ -16,7 +16,7 @@ docker run -d --name tmf-crawlee-worker --restart unless-stopped \
   --mount source=tmf-crawlee-data,target=/data \
   --cap-drop ALL --security-opt no-new-privileges \
   --pids-limit 128 --memory 768m --memory-swap 1g --cpus 1 \
-  --log-opt max-size=10m --log-opt max-file=3 tmf-crawlee:0.1.0
+  --log-opt max-size=10m --log-opt max-file=3 tmf-crawlee:0.1.1
 ```
 
 No container ports are published. The bridge runs the remote MCP entrypoint through SSH and `docker exec`. Only trusted operators should hold that remote Docker access.

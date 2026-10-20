@@ -1,5 +1,6 @@
 import {CheerioCrawler,Configuration,GotScrapingHttpClient,log} from 'crawlee';
 import {limitedStream} from './limited-stream.mjs';
+import {DOCUMENT_ACCEPT,extractSource} from './extract.mjs';
 import robotsParser from 'robots-parser';
 import https from 'node:https';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
@@ -39,28 +40,27 @@ class BoundedHttpClient extends GotScrapingHttpClient {
 }
 const crawler=new CheerioCrawler({
  httpClient:new BoundedHttpClient(),
+ additionalMimeTypes:['text/markdown','text/plain','application/xhtml+xml'],
  maxConcurrency:1,maxRequestsPerCrawl:request.max_pages,maxCrawlDepth:request.max_depth,maxRequestRetries:1,
  useSessionPool:false,sameDomainDelaySecs:2,maxRequestsPerMinute:20,
  requestHandlerTimeoutSecs:20,navigationTimeoutSecs:15,
  preNavigationHooks:[async({request:r},options)=>{
   await allowed(r.url);options.dnsLookup=publicLookup;options.dnsCache=false;options.followRedirect=false;
-  options.headers={...options.headers,'user-agent':USER_AGENT};
+  options.headers={...options.headers,'user-agent':USER_AGENT,'accept':DOCUMENT_ACCEPT};
  }],
  async requestHandler({request:r,response,body,$,enqueueLinks}){
   if(response.statusCode>=300)throw Error('Non-success HTTP '+response.statusCode+'; redirects are not followed');
   const retained=Buffer.isBuffer(body)?body:Buffer.from(body,'utf8');
   if(retained.length>request.limits.page_bytes)throw Error('Page exceeds retained-body limit');
-  const title=$('title').text().trim();$('script,style,noscript,nav,footer,header').remove();
-  const chosen=$('main').length?$('main'):$('article').length?$('article'):$('body');
-  const text=chosen.text().replace(/[ \t]+/g,' ').replace(/\n\s*\n/g,'\n\n').trim();
+  const {title,text,extraction,enqueueHTMLLinks}=extractSource(retained,$,response.headers['content-type']);
   if(text.length<80)throw Error('Insufficient readable HTML content; rendering or another parser may be required');
   const sourceId='S'+String(++id).padStart(3,'0');
   await writeFile(join(directory,'evidence',sourceId+'.html'),retained);
   await writeFile(join(directory,'evidence',sourceId+'.txt'),text);
   const policy=await allowed(r.url);
-  records.push({id:sourceId,url:r.url,final_url:r.loadedUrl??r.url,title,retrieved_at:new Date().toISOString(),state:'available',http_status:response.statusCode,content_type:response.headers['content-type'],body_sha256:hash(retained),text_sha256:hash(text),characters:text.length,extraction:'Crawlee Cheerio HTML text; retained body may be decoded/decompressed, not raw wire bytes',robots:{url:policy.url,status:policy.status,sha256:hash(policy.text)},limitations:['Public static HTML collection; not factual verification, browser rendering or complete site coverage.']});
+  records.push({id:sourceId,url:r.url,final_url:r.loadedUrl??r.url,title,retrieved_at:new Date().toISOString(),state:'available',http_status:response.statusCode,content_type:response.headers['content-type'],body_sha256:hash(retained),text_sha256:hash(text),characters:text.length,extraction,robots:{url:policy.url,status:policy.status,sha256:hash(policy.text)},limitations:['Public static document collection; not factual verification, browser rendering or complete site coverage.']});
   await writeFile(join(directory,'sources.json'),JSON.stringify(records,null,2));
-  await enqueueLinks({limit:100,transformRequestFunction:options=>{try{options.url=checkedURL(options.url,request.allowed_domains).href;return options}catch{return false}}});
+  if(enqueueHTMLLinks)await enqueueLinks({limit:100,transformRequestFunction:options=>{try{options.url=checkedURL(options.url,request.allowed_domains).href;return options}catch{return false}}});
  },
  async failedRequestHandler({request:r},error){records.push({url:r.url,state:'unavailable',reason:String(error.message).slice(0,500),attempts:r.retryCount+1});await writeFile(join(directory,'sources.json'),JSON.stringify(records,null,2));},
 },configuration);

@@ -3,7 +3,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends procps ca-certi
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
-COPY policy.mjs limited-stream.mjs crawl.mjs worker.mjs mcp.mjs ./
+COPY policy.mjs limited-stream.mjs extract.mjs crawl.mjs worker.mjs mcp.mjs ./
 RUN mkdir -p /data && chown node:node /data
 USER node
 ENV NODE_ENV=production CRAWLEE_DATA=/data

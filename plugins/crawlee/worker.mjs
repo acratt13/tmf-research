@@ -28,7 +28,7 @@ async function launch(id){
  await save(id,state);active.delete(id);drain();
 }
 async function dispatch(route,args){
- if(route==='health')return {service:'tmf-crawlee',version:'0.1.0',engine:'crawlee 3.18.2',capabilities:['public-static-html','bounded-link-discovery','evidence-passages','knowledge-pack-json-markdown'],active:active.size,queued:queue.length};
+ if(route==='health')return {service:'tmf-crawlee',version:'0.1.1',engine:'crawlee 3.18.2',capabilities:['public-static-html','public-markdown-text','bounded-link-discovery','evidence-passages','knowledge-pack-json-markdown'],active:active.size,queued:queue.length};
  if(route==='start'){
   if(stopping||queue.length+active.size>=8||(await readdir(root)).length>=100)throw Error('Worker capacity or retained-job quota reached');
   const request=brief(args),id=randomUUID();await mkdir(path(id),{mode:0o700});await writeFile(join(path(id),'request.json'),JSON.stringify(request,null,2),{mode:0o600});
