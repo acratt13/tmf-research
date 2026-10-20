@@ -60,11 +60,22 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
         insert += [('heading','TMF Council — advisory synthesis')]
         insert += [('body',f'{key}: {value}') for key,value in council.items()]
         insert += [('body','Simulated perspectives from the same provider; confidence is not factual verification. Raw positions are retained in the builder pack and local run.')]
-    lines += insert
+    # Keep the reader's answer and plan ahead of the supporting source register.
+    # report_lines remains usable for standalone records without accepted analysis.
+    detail_start=next(i for i,line in enumerate(lines) if line==('heading','Findings'))
+    appendix=lines[detail_start:]
+    lines=lines[:detail_start]+insert
     for table in synthesis.get('tables',[]):
         lines.append(('heading',table['title'] if re.match(r'^proposed\b',table['title'],re.I) else 'Proposed matrix / '+table['title']))
         for row in table['rows']:
             lines.append(('body',' · '.join(f'{column}: {cell}' for column,cell in zip(table['columns'],row))))
+    # Requirements and current decisions precede individual findings and citations.
+    actions=next((i for i,line in enumerate(appendix) if line==('heading','Proposed requirements and acceptance')),None)
+    sources=next(i for i,line in enumerate(appendix) if line==('heading','Evidence register'))
+    if actions is not None:
+        lines += appendix[actions:sources]+appendix[:actions]+appendix[sources:]
+    else:
+        lines += appendix
     if synthesis.get('coverage',{}).get('criteria'):
         lines.append(('heading','Question coverage — model assessment'))
         for item in synthesis['coverage']['criteria']:

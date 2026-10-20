@@ -29,14 +29,14 @@ async function showResult(id){
   const report=result.report,article=element('article',undefined,'research-report');
   article.append(element('div','RESEARCH BRIEF','eyebrow'),element('h1',report.title),element('p','The conclusion','section-label'),element('p',report.summary,'conclusion'));
   const nav=element('nav',undefined,'report-nav');nav.setAttribute('aria-label','Research sections');
-  for(const [anchor,label] of [['analysis','Analysis'],['coverage','Question coverage'],['findings','Findings'],['requirements','Build plan'],['unknowns','Open questions'],['evidence','Evidence']]){const a=element('a',label);a.href='#research-'+anchor;nav.append(a)}article.append(nav);
-  function section(anchor,title,note){const section=element('section',undefined,'report-section');section.id='research-'+anchor;section.append(element('h2',title));if(note)section.append(element('p',note,'section-note'));article.append(section);return section}
+  for(const [anchor,label] of [['analysis','Overview'],['requirements','Next actions'],['unknowns','Decisions & gaps'],['findings','Supporting findings'],['evidence','Sources'],['coverage','Coverage']]){const a=element('a',label);a.href='#research-'+anchor;nav.append(a)}article.append(nav);
+  function section(anchor,title,note,collapsed=false){const section=element(collapsed?'details':'section',undefined,'report-section');section.id='research-'+anchor;section.append(element(collapsed?'summary':'h2',title));if(note)section.append(element('p',note,'section-note'));article.append(section);return section}
   function citations(ids){const row=element('div',undefined,'citations');for(const id of ids||[]){const a=element('a',id);a.href='#source-'+id;a.setAttribute('aria-label','Read evidence '+id);row.append(a)}return row}
-  const analysis=section('analysis','Analysis and proposed approach','Accepted analysis from the same revision used for exports. Recommendations remain proposals.');
-  for(const item of result.analysis?.sections||[])analysis.append(element('h3',item.heading),element('p',item.text));
+  const analysis=section('analysis','The plan','Recommendations with supporting evidence. Implementation and verification steps are identified below.');
+  for(const [index,item] of (result.analysis?.sections||[]).entries()){const part=element('details',undefined,'analysis-section');part.open=index===0;part.append(element('summary',item.heading),element('p',item.text));analysis.append(part)}
   for(const matrix of result.analysis?.tables||[]){
-   const wrap=element('div',undefined,'analysis-matrix'),table=element('table'),head=element('tr');
-   wrap.append(element('h3',/^proposed\b/i.test(matrix.title)?matrix.title:'Proposed / '+matrix.title));
+   const wrap=element('details',undefined,'analysis-matrix'),table=element('table'),head=element('tr');
+   wrap.append(element('summary',/^proposed\b/i.test(matrix.title)?matrix.title:'Proposed / '+matrix.title));
    for(const column of matrix.columns)head.append(element('th',column));
    const thead=element('thead');thead.append(head);table.append(thead);
    const body=element('tbody');for(const values of matrix.rows){const row=element('tr');for(const value of values)row.append(element('td',value));body.append(row)}
@@ -45,22 +45,24 @@ async function showResult(id){
   if(!result.analysis?.sections?.length)analysis.append(element('p','No accepted analysis sections are available for this revision.'));
   const decision=result.analysis?.council_synthesis;
   if(decision?.strongest_dissent)analysis.append(element('h3','Strongest dissent'),element('p',decision.strongest_dissent));
-  const coverage=section('coverage','How well the question was answered','Model-assessed coverage against the original goals; not factual certification.');
+  const coverage=section('coverage','Research coverage','Model assessment of which goals were answered.',true);
   for(const item of result.analysis?.coverage?.criteria||[]){const row=element('div',undefined,'coverage-item');row.append(element('span',item.status,'evidence-label'),element('h3',item.question),element('p',item.reason));coverage.append(row)}
   if(!result.analysis?.coverage?.criteria?.length)coverage.append(element('p','This older investigation has no explicit question-coverage assessment.'));
-  const findings=section('findings','What the research found',report.findings.length+' accepted findings. Labels distinguish documented facts, observations, inferences and proposals.');
+  const findings=section('findings','Supporting findings ('+report.findings.length+')','Evidence behind the plan; expand for individual claims and citations.',true);
   for(const [index,finding] of report.findings.entries()){
    const card=element('div',undefined,'finding');card.append(element('span',String(index+1).padStart(2,'0'),'finding-number'));
    const content=element('div');content.append(element('span',finding.label,'evidence-label'),element('p',finding.text));if(finding.caveat)content.append(element('p',finding.caveat,'caveat'));content.append(citations(finding.sources));card.append(content);findings.append(card);
   }
-  const requirements=section('requirements','The proposed build plan',report.requirements.length+' requirements to scope and verify. These are proposals, not delivered capabilities.');
+  const requirements=section('requirements','Next actions and completion checks',report.requirements.length+' proposed steps. Expand each for its completion check.');
   for(const requirement of report.requirements){const card=element('details',undefined,'requirement'),title=element('summary',requirement.id+' · '+requirement.text);card.append(title,element('p','Acceptance condition','section-label'),element('p',requirement.acceptance),citations(requirement.basis));requirements.append(card)}
   if(!report.requirements.length)requirements.append(element('p','No build requirements were published.'));
-  const unknowns=section('unknowns','What we still need to learn','Latest entries in the saved uncertainty ledger. Earlier planning limits and role objections remain available below.');
-  const latest=report.unknowns.slice(-12),earlier=report.unknowns.slice(0,-12);
-  const list=element('ul');for(const unknown of latest)list.append(element('li',unknown));unknowns.append(list);
-  if(earlier.length){const detail=element('details');detail.append(element('summary','Earlier uncertainty entries ('+earlier.length+')'));const previous=element('ul');for(const unknown of earlier)previous.append(element('li',unknown));detail.append(previous);unknowns.append(detail)}
-  const evidence=section('evidence','Evidence register','Source availability describes the saved research snapshot, not a fresh live check.');
+  const unknowns=section('unknowns','Decisions and unresolved gaps',result.report.research_log?'Consolidated questions that affect the plan. The full research trail is available below.':'This older report contains an unreconciled research log. Expand it below; a revised report is needed to identify current decision questions.');
+  if(report.research_log){const list=element('ul');for(const unknown of report.unknowns)list.append(element('li',unknown));unknowns.append(list)}
+  const log=report.research_log||report.unknowns;
+  const detail=element('details');detail.append(element('summary','Full research log ('+log.length+' entries)'));const previous=element('ul');for(const unknown of log)previous.append(element('li',unknown));detail.append(previous);unknowns.append(detail);
+  // The delivery plan comes before its supporting audit trail.
+  article.insertBefore(requirements,coverage);article.insertBefore(unknowns,coverage);
+  const evidence=section('evidence','Source register ('+report.sources.length+')','Retained source snapshots and their limitations.',true);
   for(const source of report.sources){const card=element('div',undefined,'source');card.id='source-'+source.id;card.append(sourceLink(source),element('span',source.state,'evidence-label'),element('p',source.scope),element('p',source.limitations,'caveat'));if(source.retrieved_at)card.append(element('small','Retrieved '+new Date(source.retrieved_at).toLocaleString()));evidence.append(card)}
   if(result.council){const details=element('details',undefined,'council');details.append(element('summary','How the Council challenged this research'),element('p','Simulated perspectives from the same provider. These opinions do not establish factual support.','section-note'));for(const member of result.council.positions){details.append(element('h3',member.role),element('p',member.position||member.status),element('p','Risk: '+(member.underweighted_risk||member.reason||'Unavailable'),'caveat'))}article.append(details)}
   $('result').replaceChildren(article);

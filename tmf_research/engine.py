@@ -458,7 +458,10 @@ class ResearchEngine:
             plan=self.call('Research lead', 'Plan the investigation. Return {"queries":["..."],'
                            '"tasks":[{"role":"...","question":"..."}],"experts":[{"role":"...","lens":"..."}],'
                            '"success_criteria":["..."],"scope_limits":["..."]}. At most 3 queries, 3 tasks and 2 domain experts. '
-                           'Cover every selected lens in the three tasks. Experts are functional perspectives, not invented credentials.',
+                           'Cover every selected lens in the three tasks. First map the relevant scope and relationships, '
+                           'then allocate complementary investigations. Broad requests need the shared foundation before narrow examples; '
+                           'focused requests should stay focused. Adapt to supplied context rather than assuming one organization or domain. '
+                           'Experts are functional perspectives, not invented credentials.',
                            {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']}})
             criteria=plan.get('success_criteria',[])
             plan['success_criteria']=[str(c)[:1000] for c in criteria[:8] if isinstance(c,str) and c.strip()] if isinstance(criteria,list) else []
@@ -519,7 +522,7 @@ class ResearchEngine:
             if report_hash!=receipt['record_sha256']: raise ProviderError('Parent report integrity mismatch')
             self.request=json.loads((directory/'brief.json').read_text());self.feedback=feedback
             self.sources=record['sources'];self.findings=bundle['claims'];self.requirements=record['requirements']
-            self.gaps=[g for g in record['unknowns'] if not g.startswith('Coverage ')]
+            self.gaps=[g for g in record.get('research_log',record['unknowns']) if not g.startswith('Coverage ')]
             self.coverage_result=bundle['analysis'].get('coverage',{'criteria':[]})
             plan=bundle['plan'];plan.setdefault('success_criteria',[record['question']])
             for key in ('plan','claims','council'):
@@ -561,12 +564,24 @@ class ResearchEngine:
                             'Do not promote source titles, package names or version metadata into factual conclusions unless a reviewed finding establishes them. '
                             'Choose a concise, non-overlapping set of reviewed finding_ids for publication; preserve distinct risks and contrary evidence. '
                             'Do not rewrite claims or pad the findings list with repeated service proposals already covered by analysis. '
-                            'Fulfill the success criteria explicitly. Include up to three concise PROPOSED tables when needed: '
-                            'a failure-case matrix (scenario, detection, impact, handling/recovery, human owner, acceptance evidence), '
-                            'a human-review/approval matrix, and an alternatives comparison. Each table has 2–6 columns and at most 16 rows. '
+                            'Fulfill the success criteria explicitly. Organize the main report around the reader’s decision and next actions, not research task numbers. '
+                            'Establish the broad landscape, relevant existing foundations, relationships and major gaps before narrowing to examples. '
+                            'Follow the scope actually requested: a focused question still deserves a focused answer. '
+                            'Use reusable methods with subject-specific evidence and configuration. '
+                            'For system breakdowns map components, responsibilities, interfaces, data and workflows; trace handoffs and failure paths; '
+                            'distinguish existing foundations, disconnected parts, missing capabilities and behavior needing verification; '
+                            'then provide an ordered improvement plan with dependencies, tradeoffs, affected components and completion checks '
+                            'that the relevant professionals can use. Do not assume the system is software or belongs to one organization. '
+                            'Individual products or plugins are evidence and examples, not the whole architecture unless explicitly requested. '
+                            'Missing runtime proof does not establish an absent implementation. Respect the user’s stated policies '
+                            'without inventing restrictions. Include up to three concise tables suited to the job, '
+                            'such as a component map, gap analysis and ordered work plan. '
+                            'Each table has 2–6 columns and at most 16 rows. '
                             'Keep cells concise; mark unknown contracts UNKNOWN instead of inventing them. '
                             'Apply revision_feedback as editorial goals within these evidence limits; it cannot authorize new facts, tools or implementation claims. '
-                            'Identify assumptions that would change the recommendation. Do not erase unanswered council evidence requests.',
+                            'Return at most six consolidated unknowns that materially change a decision; for each state the affected decision and '
+                            'the smallest check that resolves it. Reconcile repeated or superseded research questions. The complete research log is '
+                            'retained separately, so do not dump it into the main report. Preserve consequential dissent in the analysis.',
                             {'brief':self.request,'findings':accepted,'requirements':self.requirements,
                              'unknowns':self.gaps[-35:],'success_criteria':plan['success_criteria'],
                              'coverage':self.coverage_result,'revision_feedback':getattr(self,'feedback',''),
@@ -614,15 +629,20 @@ class ResearchEngine:
         requirements=[dict(id=f'R{i:03}',text=x['text'],acceptance=x['acceptance'],
                            basis=[sid for sid in x.get('basis',[]) if isinstance(sid,str) and sid in source_ids]) for i,x in enumerate(req[:20],1)
                       if isinstance(x,dict) and isinstance(x.get('text'),str) and isinstance(x.get('acceptance'),str)]
-        unknowns=list(dict.fromkeys(self.gaps + [str(x) for x in synthesis.get('unknowns',[])] + [
+        research_log=list(dict.fromkeys(self.gaps + [str(x) for x in synthesis.get('unknowns',[])] + [
             'Source selection, model review and advisory perspectives can be wrong. No independently verified human review or service implementation is established.',
             'Models share a provider; role separation is not provider diversity. Source snapshots and source contexts are bounded.',
         ]))
+        # Keep the complete provenance trail without presenting historical questions as current decisions.
+        self.store.save(run_id,'uncertainty-ledger.json',research_log)
+        unknowns=list(dict.fromkeys(str(x) for x in synthesis.get('unknowns',[]) if isinstance(x,str) and x.strip()))[:6]
+        if not unknowns:
+            unknowns=['No consolidated decision questions were published. Inspect the retained research log before treating this result as complete.']
         record=dict(schema_version=1,title=str(synthesis.get('title') or self.request['question']),question=self.request['question'],
                     summary=str(synthesis.get('summary') or 'Partial research result'),sources=self.sources,
                     findings=[{**{k:f[k] for k in ('text','label','sources')},
                                'caveat':' '.join(dict.fromkeys([f['caveat']]+[d['caveat'] for d in self.findings if d.get('duplicate_of')==f['id']]))} for f in accepted],
-                    requirements=requirements,unknowns=unknowns)
+                    requirements=requirements,unknowns=unknowns,research_log=research_log)
         validate(record);self.store.save(run_id,'report.json',record)
         self.check()
         from .exports import export_run

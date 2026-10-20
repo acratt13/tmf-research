@@ -123,6 +123,25 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn(('Customer advocate',False),model.roles)
         self.assertNotIn(('Integration specialist',False),model.roles)
         self.assertEqual(council['selected_members'],['design','fullstack'])
+    def test_main_report_consolidates_questions_without_losing_research_log(self):
+        class LongLog(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                result=super().call(role,instruction,data,search)
+                if 'findings' in result:
+                    result['gaps']=['Historical investigation question '+str(i) for i in range(8)]
+                return result
+        store,rid,_=self.run_job(LongLog())
+        directory=store.directory(rid)
+        record=json.loads((directory/'report.json').read_text())
+        self.assertEqual(record['unknowns'],['Live integration untested.'])
+        self.assertIn('Historical investigation question 7',record['research_log'])
+        self.assertEqual(json.loads((directory/'uncertainty-ledger.json').read_text()),record['research_log'])
+        bundle=json.loads((directory/'outputs/builder-pack.json').read_text())
+        self.assertEqual(bundle['report']['research_log'],record['research_log'])
+        document=(directory/'outputs/report.md').read_text()
+        self.assertNotIn('Historical investigation question 7',document)
+        self.assertLess(document.index('Analysis / proposed design'),document.index('## Findings'))
+        self.assertLess(document.index('Proposed requirements and acceptance'),document.index('## Findings'))
     def test_council_rejects_unknown_unbounded_or_empty_selection(self):
         for settings in [{'council_members':['invented']},{'council_members':['design']*5},
                          {'council_members':[],'council_auto_experts':False},

@@ -14,6 +14,25 @@ its own. MC adds connected context, agents, workflows and shared document work.
 One engine, multiple job types and entry points. Spreadsheet is a delivery format,
 not the name or limit of the prospect-intelligence product.
 
+## Shared foundation before individual use cases
+
+The product uses reusable research methods with each user's own sources, context
+and configuration. A system breakdown should map components and responsibilities,
+trace connections, data and workflows, assess existing foundations and gaps, and
+produce a dependency-ordered improvement plan professionals can act on. Individual
+plugins, products and integrations support the analysis; they do not define the
+engine or replace the overall system map. TMF is an internal test case.
+
+The common pipeline is intake and scope → collection → normalized evidence →
+role-appropriate analysis → optional Council → review → usable deliverables.
+Source connectors, knowledge-store adapters, specialist profiles and output
+adapters are the extension points. These are the architecture direction; the
+capability table below distinguishes wired functionality from remaining work.
+
+Main reports lead with the answer, analysis and actions. They consolidate current
+decision questions; the complete research log stays in the machine-readable
+package. Missing test evidence must remain distinct from missing implementation.
+
 ## What exists today
 
 | Capability | Current boundary |
