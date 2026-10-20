@@ -45,7 +45,7 @@ function measure(selector) {
 try {
  try{records=JSON.parse(await readFile(join(out,'collection.json'),'utf8')).records;}catch(e){if(e.code!=='ENOENT')throw e;}
  const successful=records.filter(r=>r.state==='captured').length,attempted=new Set(records.map(r=>r.id));
- const targets=manifest.targets.filter(t=>!attempted.has(t.id)).slice(0,Math.min(batch,manifest.target_count-successful));
+ const targets=manifest.targets.filter(t=>!attempted.has(t.id)).slice(0,Math.max(0,Math.min(batch,manifest.target_count-successful)));
  if(!targets.length){console.log(JSON.stringify({state:'no_pending_targets',captured:successful,target:manifest.target_count}));}
  else {
  log.setLevel(log.LEVELS.ERROR);
