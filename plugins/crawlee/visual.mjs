@@ -6,7 +6,8 @@ import {readFile,writeFile,mkdir,open,unlink,rename} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {createPolicy,publicResponse} from './visual-network.mjs';
-import {validateManifest,sha256,designMarkdown,galleryHTML} from './visual-report.mjs';
+import {validateManifest,sha256,designMarkdown,galleryHTML,selectTargets} from './visual-report.mjs';
+import {extractRegions} from './visual-regions.mjs';
 
 const [manifestPath,outputPath,batchArg='5']=process.argv.slice(2);
 if(!manifestPath||!outputPath)throw Error('Usage: node visual.mjs MANIFEST OUTPUT [BATCH_SIZE] (CHROME_PATH required)');
@@ -44,8 +45,8 @@ function measure(selector) {
 
 try {
  try{records=JSON.parse(await readFile(join(out,'collection.json'),'utf8')).records;}catch(e){if(e.code!=='ENOENT')throw e;}
- const successful=records.filter(r=>r.state==='captured').length,attempted=new Set(records.map(r=>r.id));
- const targets=manifest.targets.filter(t=>!attempted.has(t.id)).slice(0,Math.max(0,Math.min(batch,manifest.target_count-successful)));
+ const successful=records.filter(r=>r.state==='captured').length;
+ const targets=selectTargets(manifest,records,batch);
  if(!targets.length){console.log(JSON.stringify({state:'no_pending_targets',captured:successful,target:manifest.target_count}));}
  else {
  log.setLevel(log.LEVELS.ERROR);
@@ -71,37 +72,57 @@ try {
      bytes+=response.body.length;if(bytes>25000000)throw Error('Page transfer budget exceeded');
      const headers={};for(const [k,v]of Object.entries(response.headers))if(v!=null&&!['transfer-encoding','connection','content-length','set-cookie','content-encoding'].includes(k))headers[k]=Array.isArray(v)?v.join(', '):String(v);
      await route.fulfill({status:response.status,headers,body:response.body});
-    }catch(e){if(blocked.length<40)blocked.push({url,reason:e.message});await route.abort().catch(()=>{});}
+    }catch(e){if(blocked.length<40)blocked.push({url,resource_type:r.resourceType(),reason:e.message});await route.abort().catch(()=>{});}
    });
    options.waitUntil='domcontentloaded';
   }],
   async requestHandler({page,request,response}){
-   const t=request.userData.target,dir=join(out,t.id);await mkdir(dir,{recursive:true});
+   const t=request.userData.target,dir=join(out,t.id),isScreen=t.kind==='site'||t.kind==='app-screen';await mkdir(dir,{recursive:true});
    if(!response||response.status()!==200)throw Error('Non-success navigation');
    const errors=[];page.on('pageerror',e=>{if(errors.length<10)errors.push(e.message.slice(0,300))});
    await page.waitForSelector(t.selector,{state:'visible',timeout:15000});
    // Require actual rendered content: an empty demo shell is not a captured reference.
    await page.waitForFunction(s=>{const r=document.querySelector(s);return r&&r.children.length>0},t.selector,{timeout:15000});
    await page.waitForTimeout(700);
+   if(isScreen){
+    await page.waitForFunction(selector=>{const root=document.querySelector(selector);const controls=[...root.querySelectorAll('button,input,h1,h2,[role="button"],canvas')].filter(e=>{const b=e.getBoundingClientRect();return b.width>5&&b.height>5});return controls.length>=3&&(root.innerText.trim().length>=20||root.querySelector('canvas'));},t.selector,{timeout:15000});
+    if(request.userData.blocked.some(r=>r.resource_type==='stylesheet'))throw Error('Stylesheet blocked: visual fidelity not established; do not count this screen');
+   }
    const desktop=await page.evaluate(measure,t.selector);
    if(desktop.components.length<2)throw Error('Insufficient rendered component anatomy');
    const files=[];
+   const regions=[];
    async function screenshot(name){const path=join(dir,name);await page.screenshot({path,type:'jpeg',quality:82,fullPage:false,timeout:15000});files.push(name);}
    await screenshot('desktop.jpg');
+   if(isScreen){
+    const size=await page.evaluate(()=>({width:innerWidth,height:Math.max(document.body.scrollHeight,document.documentElement.scrollHeight)}));
+    const fullName='full-page.jpg';
+    await page.screenshot({path:join(dir,fullName),type:'jpeg',quality:80,...(size.height<=14000?{fullPage:true}:{clip:{x:0,y:0,width:size.width,height:14000}}),timeout:15000});files.push(fullName);
+    for(const region of await page.evaluate(extractRegions,t.selector)){
+     try{
+      const name='component-'+region.id+'.jpg';
+      await page.locator(region.source_selector).first().screenshot({path:join(dir,name),type:'jpeg',quality:82,timeout:5000});
+      files.push(name);regions.push({...region,parent_id:t.id,screenshot:name});
+     }catch(error){regions.push({...region,parent_id:t.id,screenshot:null,capture_error:error.message.slice(0,200)});}
+    }
+    await page.evaluate(()=>scrollTo(0,0));
+   }
    const start=Date.now();await page.waitForTimeout(350);await screenshot('frame-1.jpg');
    await page.waitForTimeout(650);await screenshot('frame-2.jpg');
    const motion={desktop:{animations:desktop.animations,sample_elapsed_ms:Date.now()-start,trigger:'Passive mount; no click or drag performed'},hover:null};
    if(t.hover_selector){const target=page.locator(t.hover_selector).first();await target.hover({timeout:3000});await page.waitForTimeout(300);motion.hover=await page.evaluate(measure,t.selector);await screenshot('hover.jpg');await page.mouse.move(0,0);}
    await page.setViewportSize({width:390,height:844});await page.waitForTimeout(250);const mobile=await page.evaluate(measure,t.selector);await screenshot('mobile.jpg');
-   await page.emulateMedia({reducedMotion:'reduce'});await page.reload({waitUntil:'domcontentloaded'});await page.waitForSelector(t.selector,{timeout:15000});await page.waitForTimeout(700);const reduced=await page.evaluate(measure,t.selector);await screenshot('reduced-motion.jpg');
-   const study={schema:'tmf-design-study/v1',...t,source_text:undefined,state:'captured',review_status:'captured_unreviewed',captured_at:new Date().toISOString(),final_url:page.url(),measurements:{desktop,mobile,reduced},motion,robots:request.userData.robots,blocked_requests:request.userData.blocked,page_errors:errors,license_status:t.license_status||'unverified',limitations:['Passive frames are not full interaction or timing tests.','No automatic MC ingestion or implementation approval.']};
-   await writeFile(join(dir,'source.txt'),t.source_text||'Source not supplied.');files.push('source.txt');
+   await page.emulateMedia({reducedMotion:'reduce'});await page.waitForTimeout(700);const reduced=await page.evaluate(measure,t.selector);await screenshot('reduced-motion.jpg');
+   const study={schema:'tmf-design-study/v1',...t,source_text:undefined,state:'captured',review_status:'captured_unreviewed',captured_at:new Date().toISOString(),final_url:page.url(),measurements:{desktop,mobile,reduced},regions,motion,robots:request.userData.robots,blocked_requests:request.userData.blocked,page_errors:errors,license_status:t.license_status||'unverified',limitations:['Passive frames are not full interaction or timing tests.','No automatic MC ingestion or implementation approval.']};
+   const sourceText=t.source_text||(isScreen?await page.locator(t.selector).innerText({timeout:5000}):'Source not supplied.');
+   await writeFile(join(dir,'source.txt'),sourceText.slice(0,120000));files.push('source.txt');
+   if(isScreen){await writeFile(join(dir,'rendered-dom.html'),(await page.content()).slice(0,2000000));files.push('rendered-dom.html');}
    await writeFile(join(dir,'DESIGN.md'),designMarkdown(study));files.push('DESIGN.md');
    study.evidence=[];for(const name of files){const data=await readFile(join(dir,name));study.evidence.push({path:name,bytes:data.length,sha256:sha256(data)});}
    await writeFile(join(dir,'design.json'),JSON.stringify(study,null,2));
    records.push(study);await checkpoint();console.log(JSON.stringify({id:t.id,state:'captured',elements:desktop.components.length,palette:desktop.palette.length}));
   },
-  async failedRequestHandler({request},error){records.push({id:request.userData.target.id,url:request.url,state:'unavailable',reason:error.message.slice(0,800),at:new Date().toISOString()});await checkpoint();},
+  async failedRequestHandler({request},error){const t=request.userData.target;records.push({id:t.id,url:request.url,kind:t.kind,category:t.category,title:t.title,state:'unavailable',reason:error.message.slice(0,800),blocked_requests:request.userData.blocked,at:new Date().toISOString()});await checkpoint();},
  },config);
  let stopping=false;
  const stop=async()=>{if(stopping)return;stopping=true;await crawler.stop();};
