@@ -58,3 +58,27 @@ Earlier in this review, live MC reported Maintainer `enabled:false`; its latest 
 Port 4819 refused a health connection. Kit Studio's MC app uses a per-instance port, so this does **not** establish that its actual MC instance was unavailable. Its current canvas instance and end-to-end integration were not tested.
 
 Local audit artifacts are under `runs/maintainer-studio-catalog-review-20261020/`: pinned clones, file hashes, normalized records and keyword shortlist. Keyword matches include false positives and are not an approved stack. This report supplies a reuse direction; it does not claim installation or compatibility success.
+
+## Alex catalog: acquisition shortlist after the scope clarification
+
+The settled home is Link & Sync → Plugins: Market, organized installed plugins, Maintainer operations and Kit creation; separate Builder/Agent assignments; on-demand dynamic canvas access. Kit Studio is Maintainer's composition tool. The recommendation below means acquire/pin and qualify reusable components, not activate every overlapping manager.
+
+### First group
+
+1. **vlln/plugin-registry** — acquire its thin console, plugin development guidance and discovery/inspection pieces. Best fit for installed-state inspection and authoring contracts. Route mutations through Link & Sync. Pinned above.
+2. **whyihaveyou/dsh-suite** — acquire the repository as a toolkit. Use the catalog/compatibility pipeline, `packages/create-dsh-plugin` and selected packages. Do not describe the suite root as a single plugin to install. The manager and registry console overlap; select their useful parts behind one MC experience.
+3. **Noob-stupid/dsh-plugin-hub**, now **dsh-plugin-gating-hub** — prioritize its compatibility gates and update/readiness evidence for Maintainer. Source inspected at `84e663baa3ea416495bc5677902f3a6b4453ef12`: `lib/server/domain/contract-rules.js`, `install-finalize.js`; route/domain inventory inspected. MIT, package `@noob-stupid/dsh-plugin-console` 0.5.92. This review confirms code for rules and result mapping, not its advertised rollback guarantees. Framework-updater and auto-disable paths need explicit reconciliation with MC's lifecycle owner. Source: https://github.com/Noob-stupid/dsh-plugin-gating-hub
+4. **leechen298/Code2Skill** — acquire for Studio's source-to-capability workflow. Produces Functions, MCP tools, Skills and offline validation packages from actual source invocation points. It is not a general plugin-source merger. README, package and pipeline source inspected at `afd25120129e4cfb69fb57d0c9dfea490e8a3c60`; `skills/code2skill-generate/scripts/run_pipeline.py` tracks validation/invalidation. MIT, 1.2.0; Node ^22.19 or >=24. Source: https://github.com/leechen298/Code2Skill
+5. **FSMargoo/dsh-custom-tool** — acquire for small user/builder-authored tools and an editable code interface, potentially mounted on the canvas. README and `src/registry.ts` inspected at `7cb95649dca9b380c9a30af96bdbef87a76a2259`. Registrations, failures and workspace-scoped stores are explicit. Restricted workers are advertised; workspace path confinement is documented as lexical and symlink-sensitive. Worker isolation itself was not audited or tested. Source: https://github.com/FSMargoo/dsh-custom-tool
+
+### Later, targeted qualification
+
+- **william-jin-cmu/dsh-evolve** — whole Cordis plugin hot-mount/disposal and restart restoration; useful for experimental creation. `src/index.ts` imports generated modules and manages fibers; inspected at `37462647f89612ab89b18fadb88299e550748200`. BSD-3-Clause, 0.1.0; old ^0.0.1 DSH peer declarations. This is executable plugin loading, not merely editing a sandboxed function. Must use existing grants/lifecycle and first prove host compatibility. Source: https://github.com/william-jin-cmu/dsh-evolve
+- **fakechris/dsh-harness-ops** — recovery and A/B rollout reference/toolkit, not an all-in-one MC replacement. README and `skills/dsh-snapshot-ab/scripts/ab.sh` inspected at `791d8ad59999103c7e6cfa56bb01dd822e4f5687`; switching/rollback restarts DSH web and uses its own slots. Evaluate specific recovery components against existing MC release/process ownership before adopting. Source: https://github.com/fakechris/dsh-harness-ops
+- **suite/plugin-team-board** — useful create/claim/update/list tooling and a panel, but its own board.json would be another task authority if installed unchanged. README/package inspected; keep as a candidate for an adapter to existing tickets, not an automatic replacement. The currently declared DSH peers are ^0.1.0-rc.6.
+
+### Canvas-facing follow-up leads
+
+Alex also lists `dsh-artifact`, `dsh-genui`, `dsh-web-review`, `dsh-browser-panel` and `dsh-task-status`. These fit output descriptors, generated UI, visual review, browser operation and progress display respectively. These are catalog leads only in this review. Inventory existing MC installations before acquiring or adding them; DSH Web UI placement is not native MC canvas integration by itself.
+
+No candidate code or test suite was executed. Final installed stack depends on artifact/host qualification. The recommended starting pool is Registry + selected Suite parts + Gating Hub checks + Code2Skill + Custom Tool, complemented by the Doctor/Test Drive/security tools from the broader review.
