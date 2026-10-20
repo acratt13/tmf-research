@@ -53,6 +53,29 @@ topic, native Office interoperability or installed-MC integration.
 - MC has separate plugin/canvas work in progress. Coordinate with its owners;
   this roadmap does not create another canvas or plugin manager.
 
+## Budget-first model setup
+
+Andy, 2026-10-20: the immediate setup must be inexpensive. Keep the richer
+research/multi-model Council arrangement documented as the recommended upgrade
+configuration, subject to evaluation, rather than make it the default cost.
+
+| Profile | Proposed setup | Status |
+| --- | --- | --- |
+| Current development | Existing authenticated Codex CLI; no extra provider account needed for that path. Subscription/usage limits still apply. | Implemented baseline, not cost-free inference. |
+| Budget default | Evaluate an inexpensive tool-capable model such as DeepSeek V4.1 Flash; app owns retrieval, evidence retention and the Council workflow. Reuse evidence, select only relevant specialists, bound output and calls, and avoid automatic premium escalation. | Planned API adapter, quality/cost evaluation and cost controls; not wired or benchmarked. This is not a purpose-trained research model. |
+| Recommended upgrade configuration | Research-focused backend, knowledge-backed dynamic specialists, separate critical review; optional Perplexity Agent API research presets and OpenRouter Fusion multi-model comparison. | Candidate configuration pending quality/cost tests; optional rather than required. |
+
+Tongyi DeepResearch remains a purpose-trained research candidate, but its presence
+on a model information page is not proof of a callable provider: the OpenRouter
+public models catalog checked on 2026-10-20 did not include its ID. Confirm hosting
+and the trained prompt/tool contract before a trial. Do not download weights or
+provision self-hosting as an assumed budget shortcut.
+
+Preserve evidence checks in every profile. Routing/triage models can reduce wasted
+work; they do not replace the substantive researcher or source-support reviewer.
+Record actual token/tool usage before quoting a per-job price. No provider switch,
+paid trial, billing change or automatic premium fallback is made by this roadmap.
+
 ## What we will add
 
 | Product area | Planned additions | Definition of done |
