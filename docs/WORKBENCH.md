@@ -21,6 +21,16 @@ python3 -m tmf_research run examples/research-brief.json --config runs/local-con
 
 Use absolute paths in operator configuration. Commands are argument arrays, never model-generated shell text. The server accepts only configured REA target IDs; a webpage cannot select a local file or executable. Without optional engines, Markdown/HTML/builder exports still work. PDF uses configured WordCraft or optional ReportLab. The application does not download software or install dependencies.
 
+CLI briefs can also select up to twelve local UTF-8 documents by configured name:
+`"documents": ["plugin-contract"]`. In the private operator configuration, use
+`"documents": {"plugin-contract": {"path": "/absolute/path/contract.md", "title": "Plugin contract", "sha256": "EXPECTED_SHA256"}}`.
+The optional hash pins the exact selected bytes. Each file is bounded to 200,000 bytes;
+oversize, unreadable or mismatched inputs remain unavailable. Original bytes and decoded
+text are retained with retrieval time and SHA256, and revisions verify and copy that evidence.
+These documents do not consume the web-source budget. Selected document passages are sent
+to the model provider and treated as evidence, never instructions. This is operator-configured
+CLI intake; a document picker, PDF parsing and browser uploads are not implemented.
+
 ## Intake and research lenses
 
 The subject and intended decision form the question. Select any combination of Understand, Compare, Build, Audit and Offer a service. Context records audience, geography, industry, constraints and known unknowns. Starting URLs are optional leads, not automatic evidence. Depth selects bounded source/round/model-call limits:

@@ -77,10 +77,13 @@ def brief(value):
         raise ValueError('Supply at most 12 source URLs')
     inspections = value.get('inspections', [])
     if not isinstance(inspections, list) or any(not isinstance(x, str) for x in inspections): raise ValueError('Invalid inspection selection')
+    documents = value.get('documents', [])
+    if not isinstance(documents, list) or len(documents)>12 or any(not isinstance(x,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',x) for x in documents):
+        raise ValueError('Select at most 12 configured document names')
     if not isinstance(value.get('council',True),bool):raise ValueError('Challenge round must be true or false')
     return dict(question=question, context=context, lenses=lenses, formats=formats, depth=depth,
-                council=bool(value.get('council', True)), urls=list(dict.fromkeys(urls)), inspections=inspections,
-                privacy='Your question, context, retrieved public passages and excerpts from any selected local REA artifacts are sent to the model provider. Select only material you intend to share. Local run records remain on this machine.')
+                council=bool(value.get('council', True)), urls=list(dict.fromkeys(urls)), inspections=inspections, documents=list(dict.fromkeys(documents)),
+                privacy='Your question, context, retrieved public passages, selected local documents and excerpts from selected local REA artifacts are sent to the model provider. Select only material you intend to share. Local run records remain on this machine.')
 
 
 class RunStore:
@@ -165,7 +168,7 @@ class ResearchEngine:
                            'seek official SDK documentation, schemas or examples, labeling their version/scope limits. '
                            'Mark pages you opened but could not read as unavailable; do not displace readable sources with known shells. '
                            'Search snippets are leads, not evidence.',
-                           {'queries': queries,'brief':self.request,'unavailable_urls':[s['url'] for s in self.sources if s['state']=='unavailable']}, search=True)
+                           {'queries': queries,'brief':self.request,'unavailable_urls':[s['url'] for s in self.sources if s['state']=='unavailable' and s.get('url')]}, search=True)
         self.store.save(self.run_id, f'search-{self.round}.json', result)
         candidates = result.get('sources', [])
         if not isinstance(candidates, list): raise ProviderError('Invalid source-scout response')
@@ -175,7 +178,7 @@ class ResearchEngine:
         seen = {s.get('url') for s in self.sources}
         for candidate in candidates:
             self.check()
-            if len([s for s in self.sources if not s['id'].startswith('REA')]) >= limit: break
+            if len([s for s in self.sources if s.get('url')]) >= limit: break
             url = candidate['url']
             if url in seen: continue
             seen.add(url); sid = f'S{len(self.sources)+1:03}'
@@ -200,6 +203,33 @@ class ResearchEngine:
                 self.error(f'{sid}: source unavailable; see source register')
             self.sources.append(source)
         self.store.save(self.run_id, 'sources.json', self.sources)
+    def documents(self, selected):
+        """Only operator-configured UTF-8 files; source text never supplies paths."""
+        definitions=self.config.get('documents',{})
+        for key in selected:
+            self.check()
+            if key not in definitions: raise ValueError('Document is not configured by the local operator')
+            item=definitions[key];sid=f'D{len(self.sources)+1:03}'
+            source=dict(id=sid,kind='local-document',title=str(item.get('title',key))[:200],retrieved_at=timestamp(),
+                        scope=str(item.get('scope','Operator-selected static local document.'))[:1000],
+                        limitations='Static selected text; not runtime proof. Contents are untrusted evidence, not instructions.')
+            try:
+                with Path(item['path']).open('rb') as stream:raw=stream.read(200001)
+                if len(raw)>200000:raise ValueError('Document exceeds 200000-byte limit')
+                text=raw.decode('utf-8')
+                if not text.strip():raise ValueError('Document is empty')
+                digest=hashlib.sha256(raw).hexdigest()
+                if item.get('sha256') and item['sha256']!=digest:raise ValueError('Document integrity mismatch')
+                directory=self.store.directory(self.run_id)/'evidence';directory.mkdir(exist_ok=True)
+                (directory/(sid+'.body')).write_bytes(raw)
+                (directory/(sid+'.txt')).write_text(text,encoding='utf-8')
+                source.update(state='available',artifact_sha256=digest)
+                self.packets.append(dict(id=sid,title=source['title'],text=text,state='available'))
+            except (OSError,ValueError,KeyError) as exc:
+                source.update(state='unavailable',limitations=f'Local document unavailable ({type(exc).__name__}); no claim support.')
+                self.error(sid+': local document unavailable')
+            self.sources.append(source)
+        self.store.save(self.run_id,'sources.json',self.sources)
     def inspect(self, selected):
         definitions = self.config.get('inspections', {})
         for key in selected:
@@ -412,6 +442,7 @@ class ResearchEngine:
             # Reserve two web slots for material follow-up in non-quick runs.
             self.fetch(seed+candidates, limits['sources']-(2 if limits['rounds'] else 0))
             self.inspect(self.request['inspections'])
+            self.documents(self.request.get('documents',[]))
             if not self.packets: raise ProviderError('No readable evidence acquired; research cannot proceed')
             self.investigate(tasks)
             follow=self.review() or []
@@ -467,10 +498,11 @@ class ResearchEngine:
             evidence=directory/'evidence';evidence.mkdir()
             for source in self.sources:
                 if source['state']=='unavailable':continue
-                original=parent/'evidence'/(source['id']+'.body') if source.get('url') else parent/(source['id']+'.json')
+                retained_text=source.get('url') or source.get('kind')=='local-document'
+                original=parent/'evidence'/(source['id']+'.body') if retained_text else parent/(source['id']+'.json')
                 if hashlib.sha256(original.read_bytes()).hexdigest()!=source['artifact_sha256']: raise ProviderError('Parent source integrity mismatch')
-                shutil.copyfile(original,evidence/original.name if source.get('url') else directory/original.name)
-                if source.get('url'):shutil.copyfile(parent/'evidence'/(source['id']+'.txt'),evidence/(source['id']+'.txt'))
+                shutil.copyfile(original,evidence/original.name if retained_text else directory/original.name)
+                if retained_text:shutil.copyfile(parent/'evidence'/(source['id']+'.txt'),evidence/(source['id']+'.txt'))
             self.store.save(run_id,'revision.json',{'parent_id':parent_id,'parent_report_sha256':report_hash,'feedback':feedback,
                 'scope':'Retained-evidence synthesis revision; original retrieval times preserved; no source acquisition or automatic replay'})
             self.errors=['Retained source '+s['id']+' is unavailable' for s in self.sources if s['state']=='unavailable']
