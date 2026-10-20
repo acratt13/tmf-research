@@ -110,6 +110,27 @@ class EngineTests(unittest.TestCase):
         b=brief({'question':'Investigate this complete workflow','lenses':['audit','build','audit'],'formats':['md','builder']})
         self.assertEqual(b['lenses'],['audit','build'])
         with self.assertRaises(ValueError):brief({'question':'Investigate this workflow','lenses':['invented']})
+    def test_council_selection_controls_actual_role_calls(self):
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);store=RunStore(tmp.name)
+        rid=store.create({'question':'How should this integration be designed?', 'depth':'quick',
+                          'formats':['md'],'council':True,'council_members':['design','fullstack'],
+                          'council_auto_experts':False})
+        model=FakeModel();ResearchEngine(store,model=model,web=FakeWeb()).execute(rid)
+        self.assertEqual(store.read(rid)['status'],'completed')
+        council=json.loads((store.directory(rid)/'council.json').read_text())
+        self.assertEqual({p['role'] for p in council['positions']},
+                         {'Design systems specialist','Full-stack specialist'})
+        self.assertNotIn(('Customer advocate',False),model.roles)
+        self.assertNotIn(('Integration specialist',False),model.roles)
+        self.assertEqual(council['selected_members'],['design','fullstack'])
+    def test_council_rejects_unknown_unbounded_or_empty_selection(self):
+        for settings in [{'council_members':['invented']},{'council_members':['design']*5},
+                         {'council_members':[],'council_auto_experts':False},
+                         {'council_auto_experts':'yes'}]:
+            with self.subTest(settings=settings),self.assertRaises(ValueError):
+                brief({'question':'Investigate this integration','council':True,**settings})
+        self.assertFalse(brief({'question':'Investigate this integration','council':False,
+                                'council_members':[],'council_auto_experts':False})['council'])
     def test_public_url_rejects_private_and_non_https(self):
         for url in ['http://example.com','https://user:password@example.com','https://example.com:22']:
             with self.assertRaises(ProviderError):public_url(url)

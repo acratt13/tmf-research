@@ -42,3 +42,18 @@ Agents use relevant knowledge for their assigned work. Builders use requirements
 ## Acceptance proof
 
 Test one realistic task per pack. Record the retrieved passages, answer or action, missing inputs, escalation and reviewer result. Measure supported-claim coverage, correct exception handling, stale-information detection and whether another worker can repeat the procedure. A pack is useful when it improves those outcomes; document count is only a collection metric.
+
+## Council and knowledge-pack testing
+
+The research form has an optional Council section. Choose up to four perspectives
+and optionally allow up to two lead-selected domain specialists. The versioned
+brief retains `council_members` and `council_auto_experts`; `council.json` records
+those choices and the perspectives actually returned. The Council receives the
+investigation's reviewed findings, requirements and unresolved questions. It does
+not yet retrieve profession-specific packs or activate MC agents.
+
+Keep the next integration measurable: select a real role and pack version, run
+representative retrieval questions, retain returned passage IDs and citations,
+and record missing or stale knowledge before attaching the pack to that role.
+The existing MC knowledge owners remain authoritative. Do not use a production
+deposit endpoint as draft staging when it immediately publishes shared knowledge.

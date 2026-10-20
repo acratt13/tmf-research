@@ -42,6 +42,14 @@ class ServerTests(unittest.TestCase):
                     self.assertEqual(response.headers['Content-Type'],'application/json')
                     self.assertIn('attachment',response.headers['Content-Disposition'])
                     self.assertEqual(response.read(),(self.store.directory(self.rid)/'outputs'/name).read_bytes())
+    def test_selected_council_survives_brief_review(self):
+        config=self.request('/api/config')
+        self.assertIn('design',config['council_specialists'])
+        result=self.request('/api/brief',{'question':'Investigate a collaborative design system',
+                            'council':True,'council_members':['design','systems'],
+                            'council_auto_experts':False})
+        self.assertEqual(result['council_members'],['design','systems'])
+        self.assertFalse(result['council_auto_experts'])
     def test_origin_token_and_terminal_cancel_guards(self):
         for headers in [{'Origin':'https://evil.example'},{'X-TMF-Token':'wrong'}]:
             with self.assertRaises(urllib.error.HTTPError) as caught:self.request('/api/brief',{'question':'Investigate this workflow'},**headers)

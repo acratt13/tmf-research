@@ -11,7 +11,7 @@ import signal
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
-from .engine import ResearchEngine, RunStore, brief, LENSES, FORMATS, PRESETS
+from .engine import ResearchEngine, RunStore, brief, LENSES, FORMATS, PRESETS, COUNCIL_SPECIALISTS, DEFAULT_COUNCIL
 
 
 def serve(root, config=None, port=8765):
@@ -37,6 +37,8 @@ def serve(root, config=None, port=8765):
             try:
                 if path=='/api/config':
                     self.reply(200,{'token':token,'lenses':LENSES,'formats':FORMATS,'presets':PRESETS,
+                                    'council_specialists':{key:{'name':v[0],'lens':v[1]} for key,v in COUNCIL_SPECIALISTS.items()},
+                                    'default_council':DEFAULT_COUNCIL,
                                     'inspections':[{'id':key,'title':x.get('title',key)} for key,x in config.get('inspections',{}).items()]});return
                 if path=='/api/runs':
                     runs=[]

@@ -35,6 +35,25 @@ COUNCIL = [
     ('Operations economist', 'Challenge ongoing ownership, support burden, cost assumptions and economics.'),
     ('Assumptions challenger', 'Seek counterexamples, simpler alternatives and missing evidence.'),
 ]
+COUNCIL_SPECIALISTS = {
+    'customer': COUNCIL[0],
+    'systems': COUNCIL[1],
+    'business': COUNCIL[2],
+    'challenger': COUNCIL[3],
+    'fullstack': ('Full-stack specialist', 'Challenge implementation seams, data contracts, tests and recovery behavior.'),
+    'design': ('Design systems specialist', 'Challenge tokens, component consistency, tool interoperability, live collaboration and accessibility.'),
+    'growth': ('Marketing and SEO specialist', 'Challenge positioning, discoverability, distribution and measurable acquisition evidence.'),
+}
+DEFAULT_COUNCIL = ['customer', 'systems', 'business', 'challenger']
+
+
+def council_roles(request, experts):
+    selected = [COUNCIL_SPECIALISTS[key] for key in request['council_members']]
+    if request['council_auto_experts']:
+        selected += [(str(x.get('role', 'Domain specialist'))[:80],
+                      str(x.get('lens', 'Subject-specific gaps'))[:300])
+                     for x in experts[:2] if isinstance(x, dict)]
+    return list(dict.fromkeys(selected))
 
 
 def timestamp(): return datetime.now(timezone.utc).isoformat()
@@ -81,7 +100,16 @@ def brief(value):
     if not isinstance(documents, list) or len(documents)>12 or any(not isinstance(x,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',x) for x in documents):
         raise ValueError('Select at most 12 configured document names')
     if not isinstance(value.get('council',True),bool):raise ValueError('Challenge round must be true or false')
+    members = value.get('council_members', DEFAULT_COUNCIL)
+    if (not isinstance(members, list) or len(members) > 4
+            or any(not isinstance(x, str) or x not in COUNCIL_SPECIALISTS for x in members)):
+        raise ValueError('Select up to four known Council specialists')
+    auto_experts = value.get('council_auto_experts', True)
+    if not isinstance(auto_experts, bool):raise ValueError('Automatic domain specialists must be true or false')
+    if value.get('council', True) and not members and not auto_experts:
+        raise ValueError('Choose a Council specialist or enable automatic domain specialists')
     return dict(question=question, context=context, lenses=lenses, formats=formats, depth=depth,
+                council_members=list(dict.fromkeys(members)), council_auto_experts=auto_experts,
                 council=bool(value.get('council', True)), urls=list(dict.fromkeys(urls)), inspections=inspections, documents=list(dict.fromkeys(documents)),
                 privacy='Your question, context, retrieved public passages, selected local documents and excerpts from selected local REA artifacts are sent to the model provider. Select only material you intend to share. Local run records remain on this machine.')
 
@@ -398,8 +426,8 @@ class ResearchEngine:
         queries=result.get('follow_up_queries',[])
         return [q[:500] for q in queries if isinstance(q,str) and q.strip()][:3] if isinstance(queries,list) else []
     def council(self, experts):
-        self.event('council', 'TMF Council is challenging usefulness, feasibility, costs and assumptions.')
-        roles = COUNCIL + [(str(x.get('role','Domain specialist'))[:80],str(x.get('lens','Subject-specific gaps'))[:300]) for x in experts[:2] if isinstance(x,dict)]
+        roles = council_roles(self.request, experts)
+        self.event('council', 'Council specialists: ' + (', '.join(role for role, _ in roles) or 'none selected by the lead'))
         data = {'brief':self.request,'findings':[f for f in self.findings if f['review'] in ('supported','proposal')],
                 'requirements':self.requirements,'unknowns':self.gaps[:20]}
         task = ('Critique the research from your assigned lens; do not perform an implementation or certify anything. '
@@ -415,7 +443,9 @@ class ResearchEngine:
                 try: positions.append({'role':role,**future.result()})
                 except (ProviderError,ValueError,OSError,subprocess.SubprocessError) as exc:
                     positions.append({'role':role,'status':'unavailable','reason':type(exc).__name__});self.error('Council perspective unavailable: '+role)
-        self.store.save(self.run_id,'council.json',{'kind':'TMF Council; same-provider simulated perspectives', 'positions':positions})
+        self.store.save(self.run_id,'council.json',{'kind':'TMF Council; same-provider simulated perspectives',
+                        'selected_members':self.request['council_members'],
+                        'automatic_domain_specialists':self.request['council_auto_experts'], 'positions':positions})
         self.gaps.extend('Council evidence request: '+str(gap)[:500] for p in positions for gap in p.get('evidence_needed',[])[:2])
         return list(dict.fromkeys(str(q) for p in positions for q in p.get('follow_up_queries',[])[:1]))[:2]
     def execute(self, run_id):
