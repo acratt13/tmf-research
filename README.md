@@ -8,6 +8,8 @@ An open workbench for turning research and software inspection into useful, trac
 
 **Local workbench, early release.** TMF Council connects a research lead, source scout, specialist investigations, real REA inspection, evidence review, critical perspectives, follow-up research and selected exports. Roles are separate bounded calls through the user's installed Codex CLI, not independent human experts. Read the [setup, evidence boundaries and live-run verification](docs/WORKBENCH.md). This is not a hosted service or a proven improvement over ordinary search.
 
+See [what works today and the delivery roadmap](docs/ROADMAP.md) for the path to specialized documents, prospect intelligence, RAG-ready knowledge packs and Mission Control integration.
+
 ![Proposed research architecture](docs/architecture.png)
 
 ## Try it in one minute
