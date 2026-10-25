@@ -40,6 +40,14 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(json.loads(root.joinpath('allow.json').read_text())['allow'], ['submit', 'status', 'result', 'cancel'])
         hints = json.loads(root.joinpath('tool-annotations.json').read_text())['toolAnnotations']
         self.assertEqual({key.rsplit('_', 1)[1]: value['readOnlyHint'] for key, value in hints.items()}, {'submit': False, 'status': True, 'result': True, 'cancel': False})
+        import tomllib
+        from pathlib import Path
+        server = json.loads(root.joinpath('mcp-servers.json').read_text())['mcpServers'][0]
+        command = server['args'][-1]
+        scripts = tomllib.loads((Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text())['project']['scripts']
+        self.assertEqual(scripts[command], 'tmf_research.cli:main')
+        self.assertEqual(set(hints), {f"mcp.{server['name']}/{command}_{op}" for op in ('submit', 'status', 'result', 'cancel')})
+        self.assertEqual(server['probe']['tool'], command + '_status')
 
 
 class WorkbenchCliTests(unittest.TestCase):
@@ -136,7 +144,7 @@ class WorkbenchCliTests(unittest.TestCase):
             args = ['result', '--id', rid, '--cursor', str(cursor)] + (['--sha256', digest] if digest else [])
             code, response, raw = self.cli(*args)
             self.assertEqual(code, 0); self.assertEqual(response['status'], 'partial')
-            wire = {'content': [{'type': 'text', 'text': raw + '\n[exit 0]'}]}
+            wire = {'isError': False, 'content': [{'type': 'text', 'text': raw + '\n[exit 0]'}]}
             self.assertLessEqual(len(json.dumps(wire, ensure_ascii=False).encode()), PAGE_BYTES)
             self.assertFalse('REJECTED_DRAFT' in raw)
             chunks.append(response['text']); digest = response['sha256']

@@ -82,7 +82,7 @@ def page(value, status, cursor=0, expected_hash=None):
         end = (low + high + 1) // 2
         result = answer(end)
         # Include the existing shim's text wrapper and JSON escaping, not just document bytes.
-        wire = {'content': [{'type': 'text', 'text': dump(result) + '\n[exit 0]'}]}
+        wire = {'isError': False, 'content': [{'type': 'text', 'text': dump(result) + '\n[exit 0]'}]}
         if len(json.dumps(wire, ensure_ascii=False).encode()) <= PAGE_BYTES: low = end
         else: high = end - 1
     if low == cursor and cursor < len(text): raise ValueError('Result metadata exceeds the page budget')
