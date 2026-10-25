@@ -39,7 +39,7 @@ package. Missing test evidence must remain distinct from missing implementation.
 
 | Capability | Current boundary |
 | --- | --- |
-| Local browser workspace and CLI | Developer setup from GitHub; Python 3.11+ and authenticated Codex CLI 0.160.1 for research. No ordinary desktop installer yet. |
+| Local browser workspace and CLI | Developer setup from GitHub; Python 3.11+ and an authenticated Codex CLI with the [required isolation features](WORKBENCH.md#start) for research; missing features are refused by name. No ordinary desktop installer yet. |
 | Selectable research modes | Understand, Compare, Build, Audit and Offer a service can be combined. Quick, Detailed and Deep have bounded source, round and role-call budgets. |
 | Research orchestration | Lead planning, source scouting, concurrent specialist calls, advisory Council perspectives, evidence review and bounded follow-up. Roles currently use the same provider. |
 | Optional Council section | Browser form defaults to regular research. Select up to four customer, systems, business, challenge, full-stack, design-system or marketing/SEO perspectives; optionally let the lead add up to two domain specialists. Selections are retained in the brief and Council artifact and control actual role calls. This is not MC role activation or knowledge-pack assignment. |
