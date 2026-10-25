@@ -33,6 +33,24 @@ class ProviderProtocolTests(unittest.TestCase):
             model=CodexModel(max_calls=1);result=model.call('Test role','Return sources',{},search=search)
             with self.assertRaises(ProviderError):model.call('Second role','Return sources',{})
         return model,result,commands
+    def test_host_is_infrastructure_while_every_other_isolation_argument_is_unchanged(self):
+        for search in [False, True]:
+            with self.subTest(search=search):
+                _, _, commands = self.run_adapter(['web_search', 'agent_message'] if search else ['agent_message'], search)
+                command = commands[0]
+                directory = command[command.index('-C') + 1]
+                normalized = [part.replace(directory, '$ROLE') for part in command]
+                expected = ['codex', 'exec', '--ignore-user-config', '--ignore-rules', '--ephemeral',
+                            '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '$ROLE', '--json',
+                            '--output-schema', '$ROLE/schema.json', '-o', '$ROLE/answer.json']
+                for line in FEATURES.splitlines(): expected += ['-c', 'features.' + line.split()[0] + '=false']
+                for config in ['features.skip_host_skill_discovery=true', 'project_doc_max_bytes=0',
+                               'model_reasoning_effort="medium"', 'shell_environment_policy.inherit="none"',
+                               'suppress_unstable_features_warning=true', 'features.code_mode_host=true',
+                               'web_search="live"' if search else 'web_search="disabled"']:
+                    expected += ['-c', config]
+                self.assertEqual(normalized, expected + ['-'])
+
     def test_live_search_requires_recorded_native_event(self):
         with self.assertRaises(ProviderError):self.run_adapter(['agent_message'],True)
     def test_unexpected_execution_is_rejected(self):
