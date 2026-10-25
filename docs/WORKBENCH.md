@@ -4,7 +4,7 @@ TMF Council is the research team. A lead creates a bounded plan; a source scout 
 
 ## Start
 
-Python 3.11+ and an installed, authenticated Codex CLI **0.160.1** are required for live model roles. The role adapter ignores user CLI configuration/rules, suppresses skill discovery, disables plugins/apps/hooks/shell and other tool features, uses fresh ephemeral temporary working directories and read-only execution, and enables native web search only for the source scout. Existing authentication stays in its normal provider location; the project does not read or copy credential files. No model name is forced. This version check is intentionally strict; supporting another CLI needs a fresh capability/isolation check.
+Python 3.11+ and an installed, authenticated Codex CLI with the required isolation features are required for live model roles. The role adapter ignores user CLI configuration/rules, suppresses skill discovery, disables plugins/apps/hooks/shell and other tool features, uses fresh ephemeral temporary working directories and read-only execution, and enables native web search only for the source scout. Existing authentication stays in its normal provider location; the project does not read or copy credential files. No model name is forced. Compatibility is checked against the CLI's declared, non-deprecated isolation features: `shell_tool`, `unified_exec`, `plugins`, `apps`, `hooks`, `multi_agent`, and `skip_host_skill_discovery`. A missing feature refuses startup by name; a version number alone neither admits nor refuses a CLI. Execution flags, structured output, call budgets and unexpected-tool-event checks still apply.
 
 ```bash
 python3 -m tmf_research serve
