@@ -35,7 +35,7 @@ class TimeoutEvidenceTests(unittest.TestCase):
 
     def test_nested_credential_patterns_mask_tokens_but_keep_usage_counts(self):
         credentials = ['token', 'id_token', 'idToken', 'session_token', 'oauth_token', 'access_token',
-                       'prefixSecretSuffix', 'MyPasswordHint', 'vendor_API_KEY_backup', 'vendorApiKey', 'ProxyAUTHORIZATIONdata']
+                       'prefixSecretSuffix', 'MyPasswordHint', 'vendor_API_KEY_backup', 'vendorApiKey', 'api.key', 'api key', 'ProxyAUTHORIZATIONdata']
         value = {'outer': [{**{key: 'synthetic-credential-741' for key in credentials},
                             'elapsed_ms': 123, 'usage': {'input_tokens': 17, 'output_tokens': 8, 'token_count': 25}}]}
         clean = json.loads(retained_diagnostic(json.dumps(value)))['outer'][0]
