@@ -1,0 +1,13 @@
+{
+  "mcpServers": [{
+    "name": "tmf-research",
+    "transport": "stdio",
+    "command": "node",
+    "args": [
+      "${plugin:.mc-cli-shim/cli-mcp-shim.mjs}",
+      "--allow-file", "${data}/tmf-research-allow.json",
+      "--", "tmf-research"
+    ],
+    "probe": {"tool": "tmf-research_status", "arguments": {}}
+  }]
+}

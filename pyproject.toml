@@ -22,4 +22,4 @@ tmf-research = "tmf_research.cli:main"
 include = ["tmf_research*"]
 
 [tool.setuptools.package-data]
-tmf_research = ["web/*.html", "web/*.css", "web/*.js"]
+tmf_research = ["web/*.html", "web/*.css", "web/*.js", "mc/*.json"]

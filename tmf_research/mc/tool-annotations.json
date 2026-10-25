@@ -1,0 +1,8 @@
+{
+  "toolAnnotations": {
+    "mcp.tmf-research/tmf-research_submit": {"readOnlyHint": false},
+    "mcp.tmf-research/tmf-research_status": {"readOnlyHint": true},
+    "mcp.tmf-research/tmf-research_result": {"readOnlyHint": true},
+    "mcp.tmf-research/tmf-research_cancel": {"readOnlyHint": false}
+  }
+}

@@ -114,6 +114,10 @@ def brief(value):
                 privacy='Your question, context, retrieved public passages, selected local documents and excerpts from selected local REA artifacts are sent to the model provider. Select only material you intend to share. Local run records remain on this machine.')
 
 
+class RequestConflict(ValueError):
+    """A saved request must never be replayed with a different brief."""
+
+
 class RunStore:
     def __init__(self, root):
         self.root = Path(root).resolve(); self.root.mkdir(parents=True, exist_ok=True); self.lock = threading.RLock()
@@ -129,12 +133,32 @@ class RunStore:
                 f.write(dump(data)); f.flush(); os.fsync(f.fileno())
             tmp.replace(target)
     def read(self, run_id): return json.loads((self.directory(run_id) / 'state.json').read_text())
-    def create(self, request):
-        run_id = uuid.uuid4().hex
-        self.directory(run_id).mkdir()
-        self.save(run_id, 'brief.json', brief(request))
-        self.save(run_id, 'state.json', {'id': run_id, 'status': 'queued', 'stage': 'queued', 'started_at': timestamp(), 'events': [], 'outputs': [], 'errors': []})
-        return run_id
+    def request_identity(self, request, request_id):
+        if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', request_id):
+            raise ValueError('Use a stable request id of 1–128 letters, digits or ._:-')
+        digest = hashlib.sha256(json.dumps(brief(request), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        run_id = hashlib.sha256(('research-request-v1:' + request_id).encode()).hexdigest()[:32]
+        return run_id, digest
+    def existing_request(self, request, request_id):
+        if request_id is None: return None
+        run_id, digest = self.request_identity(request, request_id)
+        if not self.directory(run_id).exists(): return None
+        try: state = self.read(run_id)
+        except (OSError, ValueError): raise RequestConflict('Saved request is incomplete; no new job was started')
+        if state.get('request_hash') != digest:
+            raise RequestConflict('Request id already belongs to a different brief')
+        return state
+    def create(self, request, request_id=None):
+        request = brief(request)
+        with self.lock:
+            prior = self.existing_request(request, request_id)
+            if prior: return prior['id']
+            run_id, digest = self.request_identity(request, request_id) if request_id is not None else (uuid.uuid4().hex, None)
+            self.directory(run_id).mkdir()
+            self.save(run_id, 'brief.json', request)
+            self.save(run_id, 'state.json', {'id': run_id, 'status': 'queued', 'stage': 'queued', 'started_at': timestamp(), 'events': [], 'outputs': [], 'errors': [],
+                                           **({'request_id': request_id, 'request_hash': digest} if request_id is not None else {})})
+            return run_id
     def update(self, run_id, **fields):
         with self.lock:
             state = self.read(run_id); state.update(fields); self.save(run_id, 'state.json', state)
