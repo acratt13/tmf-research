@@ -99,3 +99,36 @@ class RoleRetentionTests(unittest.TestCase):
                 number = row['input']['data']['number']
                 self.assertEqual(row['output'], {'role': 'Reviewer ' + str(number), 'values': [number]})
                 self.assertEqual(row['status'], 'returned')
+
+    def test_unicode_line_separators_round_trip_in_both_input_and_output(self):
+        for separator in ['\u2028', '\u2029', '\u0085']:
+            for location in ['input', 'output']:
+                with self.subTest(separator=ascii(separator), location=location):
+                    value = 'before' + separator + 'after'
+                    class Model:
+                        calls = 0
+                        def call(self, *args, **kwargs):
+                            self.calls += 1
+                            return {'answer': value if location == 'output' else 'ordinary'}
+                    with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {}, clear=True):
+                        model = Model(); engine = self.engine(root, model)
+                        data = {'question': value if location == 'input' else 'ordinary'}
+                        answer = engine.call('Reviewer', 'Fixture', data)
+                        row = json.loads((engine.store.directory(engine.run_id)/'role-calls.json').read_text())[0]
+                        self.assertEqual(model.calls, 1)
+                        self.assertEqual(row['input']['data'], data)
+                        self.assertEqual(row['output'], answer)
+                        self.assertEqual(row['status'], 'returned')
+                        for key in ['input', 'output']:
+                            self.assertFalse(row[key + '_redacted'])
+                            raw = json.dumps(row[key], ensure_ascii=False)
+                            self.assertEqual(row[key + '_sha256'], hashlib.sha256(raw.encode()).hexdigest())
+
+    def test_json_normalization_is_not_marked_as_redaction(self):
+        class Model:
+            def call(self, *args, **kwargs): return {'tuple': ('one', 'two'), 'keys': {1: 'one'}, 'number': float('nan')}
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {}, clear=True):
+            engine = self.engine(root, Model())
+            engine.call('Reviewer', 'Fixture', {'tuple': ('one', 'two'), 'keys': {1: 'one'}, 'number': float('nan')})
+            row = json.loads((engine.store.directory(engine.run_id)/'role-calls.json').read_text())[0]
+            self.assertFalse(row['input_redacted']); self.assertFalse(row['output_redacted'])

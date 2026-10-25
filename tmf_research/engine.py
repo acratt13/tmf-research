@@ -180,10 +180,10 @@ class RunStore:
 
 def retain_role_value(entry, key, value):
     raw = json.dumps(value, ensure_ascii=False)
-    saved = json.loads(retained_diagnostic(raw, limit=None))
+    saved = json.loads(retained_diagnostic(json.dumps(value), limit=None))
     entry[key] = saved
     entry[key + '_sha256'] = hashlib.sha256(raw.encode()).hexdigest()
-    entry[key + '_redacted'] = saved != value
+    entry[key + '_redacted'] = json.dumps(saved, ensure_ascii=False) != raw
 
 
 class ResearchEngine:
