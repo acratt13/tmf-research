@@ -166,10 +166,10 @@ class CodexModel:
             for config in ['features.skip_host_skill_discovery=true', 'project_doc_max_bytes=0',
                            'model_reasoning_effort="medium"', 'shell_environment_policy.inherit="none"',
                            'suppress_unstable_features_warning=true',
-                           'features.code_mode_host=true' if search else 'features.code_mode_host=false',
+                           'features.code_mode_host=true',
                            'web_search="live"' if search else 'web_search="disabled"']:
                 cmd += ['-c', config]
-            # Raw CLI events are local, transient; only usage metadata is retained.
+            # Raw events stay transient; the run owner filters retained timeout diagnostics.
             proc = bounded_run(cmd + ['-'], input=prompt, timeout=self.timeout)
             if proc.returncode or not output.is_file():
                 raise ProviderError('Codex role failed or returned no final result')
