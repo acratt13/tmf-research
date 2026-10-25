@@ -47,7 +47,7 @@ def retained_diagnostic(value, limit=16000):
         try: lines.append(json.dumps(clean(json.loads(line))))
         except ValueError: lines.append(clean_text(line))
     text = '\n'.join(lines)
-    return text[:limit] + ('\n[partial diagnostic truncated]' if len(text) > limit else '')
+    return text if limit is None else text[:limit] + ('\n[partial diagnostic truncated]' if len(text) > limit else '')
 
 
 def bounded_run(command, *, input=None, timeout=120, max_output=8_000_000, text=True):
