@@ -22,11 +22,25 @@ function sourceLink(source){
  if(!['https:','http:'].includes(url.protocol))return element('span',label);
  const a=element('a',label);a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';return a;
 }
+function timedOutSection(roles){
+ if(!roles?.length)return null;
+ const section=element('section',undefined,'report-section');
+ section.append(element('h2','Timed-out roles — partial output'),element('p','Diagnostic evidence only. This incomplete output is not accepted research or a final answer.'));
+ for(const role of roles){
+  const details=element('details');
+  details.append(element('summary',`${role.role} · ${role.elapsed_seconds}s elapsed · ${role.timeout_seconds}s limit`));
+  for(const stream of ['stdout','stderr'])details.append(element('h3',stream),element('pre',role.partial?.[stream]||'(no partial output captured)'));
+  section.append(details);
+ }
+ return section;
+}
 async function showResult(id){
  $('result').replaceChildren();
  try{
   const result=await api('/api/result/'+id);if(id!==runId)return;
-  const report=result.report,article=element('article',undefined,'research-report');
+  const report=result.report,article=element('article',undefined,'research-report'),timeouts=timedOutSection(result.timed_out_roles);
+  if(timeouts)article.append(timeouts);
+  if(!report){article.prepend(element('h1','No accepted research report was produced'));$('result').replaceChildren(article);return;}
   article.append(element('div','RESEARCH BRIEF','eyebrow'),element('h1',report.title),element('p','The conclusion','section-label'),element('p',report.summary,'conclusion'));
   const nav=element('nav',undefined,'report-nav');nav.setAttribute('aria-label','Research sections');
   for(const [anchor,label] of [['analysis','Overview'],['requirements','Next actions'],['unknowns','Decisions & gaps'],['findings','Supporting findings'],['evidence','Sources'],['coverage','Coverage']]){const a=element('a',label);a.href='#research-'+anchor;nav.append(a)}article.append(nav);

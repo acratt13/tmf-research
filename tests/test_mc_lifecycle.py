@@ -167,6 +167,28 @@ class WorkbenchCliTests(unittest.TestCase):
         self.assertEqual(code, 0); self.assertEqual(response['id'], rid); self.assertEqual(response['status'], 'interrupted')
         self.assertEqual(len(self.engines), 0)
 
+    def test_failed_result_pages_keep_timed_out_partial_output_without_a_report(self):
+        from tmf_research.client import PAGE_BYTES
+        rid = self.store.create({'question': 'Read a timed-out role without retrying it'})
+        diagnostics = [{'role': 'Reviewer', 'status': 'timed_out', 'elapsed_seconds': 180.1,
+                        'timeout_seconds': 180, 'partial': {'stdout': 'partial 💡 "reasoning" ' * 300, 'stderr': 'bounded diagnostic'}}]
+        self.store.update(rid, status='failed', timed_out_roles=diagnostics)
+        chunks, cursor, digest = [], 0, None
+        while True:
+            args = ['result', '--id', rid, '--cursor', str(cursor)] + (['--sha256', digest] if digest else [])
+            code, page, raw = self.cli(*args)
+            self.assertEqual(code, 0)
+            self.assertEqual(page['status'], 'failed')
+            wire = {'isError': False, 'content': [{'type': 'text', 'text': raw + '\n[exit 0]'}]}
+            self.assertLessEqual(len(json.dumps(wire, ensure_ascii=False).encode()), PAGE_BYTES)
+            chunks.append(page['text']); digest = page['sha256']
+            if page['next_cursor'] is None: break
+            self.assertGreater(page['next_cursor'], cursor); cursor = page['next_cursor']
+        result = json.loads(''.join(chunks))
+        self.assertEqual(result['timed_out_roles'], diagnostics)
+        self.assertNotIn('result', result)
+        self.assertEqual(self.engines, [])
+
     def test_simultaneous_retry_has_one_worker_and_one_retained_run(self):
         from concurrent.futures import ThreadPoolExecutor
         from tmf_research.client import Workbench

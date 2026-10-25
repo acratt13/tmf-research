@@ -12,6 +12,16 @@ from tmf_research.engine import ResearchEngine,RunStore
 from test_engine import FakeModel,FakeWeb
 
 class ServerTests(unittest.TestCase):
+    def test_timeout_result_retains_diagnostics_without_inventing_a_report(self):
+        run = self.store.create({'question': 'What timed out?', 'council': False})
+        diagnostics = [{'role': 'Fixture reviewer', 'status': 'timed_out', 'elapsed_seconds': 180.1,
+                        'timeout_seconds': 180, 'partial': {'stdout': 'incomplete reasoning', 'stderr': 'redacted diagnostic'}}]
+        self.store.update(run, status='failed', timed_out_roles=diagnostics)
+        result = self.request('/api/result/' + run)
+        self.assertIsNone(result['report'])
+        self.assertEqual(result['timed_out_roles'], diagnostics)
+        self.assertEqual(self.request('/api/runs/' + run)['status'], 'failed')
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.store=RunStore(self.temp.name)
