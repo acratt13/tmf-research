@@ -16,7 +16,7 @@ See [what works today and the delivery roadmap](docs/ROADMAP.md) for the path to
 
 ## Try it in one minute
 
-For the research workspace, use Python 3.11+ and an authenticated **Codex CLI 0.160.1**. The exact CLI boundary is checked; other versions fail visibly rather than silently weakening role isolation.
+For the research workspace, use Python 3.11+ and an authenticated Codex CLI providing the [required isolation features](docs/WORKBENCH.md#start). Compatibility is checked by those declared, non-deprecated features, not an exact version pin; a missing feature is refused by name.
 
 ```bash
 python3 -m tmf_research serve
