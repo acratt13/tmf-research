@@ -33,6 +33,17 @@ class TimeoutEvidenceTests(unittest.TestCase):
             self.assertEqual({r['role'] for r in roles}, {'first', 'second', 'third'})
             for role in roles: self.assertEqual(role['partial']['stdout'], role['role'])
 
+    def test_nested_credential_patterns_mask_tokens_but_keep_usage_counts(self):
+        credentials = ['token', 'id_token', 'idToken', 'session_token', 'oauth_token', 'access_token',
+                       'prefixSecretSuffix', 'MyPasswordHint', 'vendor_API_KEY_backup', 'vendorApiKey', 'ProxyAUTHORIZATIONdata']
+        value = {'outer': [{**{key: 'synthetic-credential-741' for key in credentials},
+                            'elapsed_ms': 123, 'usage': {'input_tokens': 17, 'output_tokens': 8, 'token_count': 25}}]}
+        clean = json.loads(retained_diagnostic(json.dumps(value)))['outer'][0]
+        for key in credentials:
+            self.assertEqual(clean[key], '[redacted]', key)
+        self.assertEqual(clean['usage'], {'input_tokens': 17, 'output_tokens': 8, 'token_count': 25})
+        self.assertEqual(clean['elapsed_ms'], 123)
+
     def test_diagnostics_redact_structured_credentials_and_remain_bounded(self):
         # SECRET-FIXTURE: synthetic sentinels, not real secrets.
         value = json.dumps({'type': 'item.completed', 'item': {'apiKey': 'synthetic-key-741',

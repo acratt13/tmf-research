@@ -30,7 +30,7 @@ atexit.register(cleanup_children)
 def retained_diagnostic(value, limit=16000):
     """Private partial output, with credential fields/patterns and known environment secrets removed."""
     text = value.decode(errors='replace') if isinstance(value, bytes) else str(value or '')
-    secret_name = re.compile(r'api.?key|(?:access|refresh).?token|password|passwd|secret|authorization|^token$', re.I)
+    secret_name = re.compile(r'token$|secret|password|passwd|api[_-]?key|authorization', re.I)
     known = [v for k, v in os.environ.items() if re.search(r'KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH', k, re.I) and v]
     def clean_text(text):
         for value in known: text = text.replace(value, '[redacted]')
