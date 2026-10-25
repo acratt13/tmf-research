@@ -10,11 +10,12 @@ import re
 import subprocess
 import shutil
 import threading
+import time
 import uuid
 
 from .cli import dump, validate, REA_OPERATIONS
 from .providers import CodexModel, PublicWeb, ProviderError
-from .processes import bounded_run
+from .processes import bounded_run, retained_diagnostic
 
 LENSES = {
     'understand': 'Explain the system and its complete workflow.',
@@ -195,16 +196,25 @@ class ResearchEngine:
             query=json.dumps({'brief':data.get('brief',{}),'task':data.get('task',{})},ensure_ascii=False)
             data={**data,'evidence':[{**p,'text':source_passages(p['text'],query,per_source)} for p in packets]}
         entry={'id':uuid.uuid4().hex,'role':role,'started_at':timestamp(),'status':'running','search_enabled':search}
+        started = time.monotonic()
         with self.role_lock:
             self.role_calls.append(entry);self.store.save(self.run_id,'role-calls.json',self.role_calls)
         try:
             result = self.model.call(role, task, data, search=search)
             entry.update(status='returned',finished_at=timestamp())
+        except subprocess.TimeoutExpired as exc:
+            entry.update(status='timed_out', finished_at=timestamp(), error=type(exc).__name__, timeout_seconds=exc.timeout,
+                         partial={'stdout': retained_diagnostic(exc.output), 'stderr': retained_diagnostic(exc.stderr)})
+            raise
         except Exception as exc:
             entry.update(status='failed',finished_at=timestamp(),error=type(exc).__name__)
             raise
         finally:
-            with self.role_lock:self.store.save(self.run_id,'role-calls.json',self.role_calls)
+            entry['elapsed_seconds'] = round(time.monotonic() - started, 3)
+            with self.role_lock:
+                self.store.save(self.run_id,'role-calls.json',self.role_calls)
+                timed_out = [r for r in self.role_calls if r['status'] == 'timed_out']
+                if timed_out: self.store.update(self.run_id, timed_out_roles=timed_out)
         self.check()
         return result
     def event(self, stage, text): self.store.event(self.run_id, stage, text)

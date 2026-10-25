@@ -71,6 +71,8 @@ Each run has a UUID directory containing its brief, plan, search results, retain
 
 Statuses distinguish queued/running, completed, partial, failed, cancelling, cancelled and interrupted. Completed means the configured investigation finished with accepted findings and requested outputs; it is not comprehensive knowledge, independent certification or implementation acceptance. Partial exposes unavailable exports, acquisition failures or unsupported claims. A failed job retains evidence; the UI never turns it into an empty success.
 
+Timed-out model roles retain their elapsed time, deadline, and bounded partial stdout/stderr in the run state and role-call record. The result view and CLI label this as partial diagnostic output, never accepted research. Credential fields, common credential patterns and secret values known by environment name are filtered before saving; arbitrary private source text is not guaranteed anonymous. Keep these local run records private and review them before sharing. The per-role deadline is unchanged, and diagnostics do not automatically retry work.
+
 Cancellation prevents later stages/publication. An in-flight bounded provider/renderer operation may finish before cancellation is observed. POSIX subprocess deadlines/output limits kill and reap the child process group; Windows cleanup is limited to the direct process. Restart marks unfinished jobs interrupted, including pending cancellation, without automatically replaying work. Automatic resumable execution is not implemented; use retained evidence and start a new run.
 
 ## Exports

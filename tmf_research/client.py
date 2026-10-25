@@ -105,6 +105,7 @@ def execute(args):
         return page(value, value['status'] if args.id else 'available', args.cursor, args.sha256)
     state = workbench.request('/api/runs/' + run_id(args.id))
     result = {'state': state, 'artifacts': [{'name': name, 'url': f'{workbench.base}/outputs/{args.id}/{name}'} for name in state.get('outputs', [])]}
+    if state.get('timed_out_roles'): result['timed_out_roles'] = state['timed_out_roles']
     if state['status'] in ('completed', 'partial'):
         try: result['result'] = workbench.request('/api/result/' + args.id)
         except WorkbenchError as exc:

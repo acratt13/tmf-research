@@ -48,10 +48,12 @@ def serve(root, config=None, port=8765):
                     self.reply(200,runs);return
                 if path.startswith('/api/result/'):
                     run_id=path.rsplit('/',1)[1];directory=store.directory(run_id)
-                    report=json.loads((directory/'report.json').read_text())
+                    timed_out = store.read(run_id).get('timed_out_roles', [])
+                    report=json.loads((directory/'report.json').read_text()) if (directory/'report.json').exists() else None
+                    if report is None and not timed_out: raise FileNotFoundError()
                     council=directory/'council.json'
                     published=directory/'published-analysis.json'
-                    self.reply(200,{'report':report,'council':json.loads(council.read_text()) if council.exists() else None,
+                    self.reply(200,{'report':report,'timed_out_roles':timed_out,'council':json.loads(council.read_text()) if council.exists() else None,
                                     'analysis':json.loads(published.read_text()) if published.exists() else None});return
                 if path.startswith('/api/runs/'):
                     run_id=path.rsplit('/',1)[1]
