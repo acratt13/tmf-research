@@ -11,7 +11,7 @@ import signal
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
-from .engine import ResearchEngine, RunStore, brief, LENSES, FORMATS, PRESETS, COUNCIL_SPECIALISTS, DEFAULT_COUNCIL
+from .engine import ResearchEngine, RunStore, RequestConflict, brief, LENSES, FORMATS, PRESETS, COUNCIL_SPECIALISTS, DEFAULT_COUNCIL
 
 
 def serve(root, config=None, port=8765):
@@ -81,10 +81,13 @@ def serve(root, config=None, port=8765):
                 if self.path=='/api/brief':return self.reply(200,brief(payload))
                 if self.path=='/api/runs':
                     request=brief(payload)
-                    if any(x not in config.get('inspections',{}) for x in request['inspections']):raise ValueError('Unknown inspection selection')
                     with lock:
+                        request_id=payload.get('request_id')
+                        prior=store.existing_request(request,request_id)
+                        if prior:return self.reply(200,{'id':prior['id'],'status':prior['status'],'reused':True})
                         if active:return self.reply(409,{'error':'One research job is already active; view or cancel it before starting another'})
-                        run_id=store.create(request);engine=ResearchEngine(store,config);active[run_id]=engine
+                        if any(x not in config.get('inspections',{}) for x in request['inspections']):raise ValueError('Unknown inspection selection')
+                        run_id=store.create(request,request_id=request_id);engine=ResearchEngine(store,config);active[run_id]=engine
                     def execute():
                         try:engine.execute(run_id)
                         finally:
@@ -166,9 +169,11 @@ def serve(root, config=None, port=8765):
                             engine.cancelled.set();store.update(payload['id'],status='cancelling')
                     return self.reply(202,{'status':'cancelling','note':'In-flight bounded calls finish or time out; no new stages will start.'})
                 self.reply(404,{'error':'Unknown action'})
+            except RequestConflict as exc:self.reply(409,{'error':str(exc)})
             except (ValueError,TypeError,KeyError,AttributeError):self.reply(400,{'error':'Invalid research brief or request'})
             except OSError:self.reply(404,{'error':'Selected run data is unavailable'})
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
+    port=server.server_port
     print(f'TMF Council workbench: http://127.0.0.1:{port}',flush=True)
     prior_signal=None
     if threading.current_thread() is threading.main_thread():

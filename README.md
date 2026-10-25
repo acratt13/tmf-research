@@ -27,6 +27,24 @@ Choose any combination of **Understand / Compare / Build / Audit / Offer a servi
 
 For command-line research, see [example brief](examples/research-brief.json) and [configuration](examples/workbench-config.json). Run files and evidence stay under ignored `runs/` by default. Selected brief, public passages and local REA excerpts are sent to the model provider; select only material you intend to share.
 
+### Short workbench lifecycle commands
+
+The workbench above remains the only job owner. These commands contact that running service and exit promptly; they do not launch another worker or run the model inside a tool call. The operator can set `TMF_RESEARCH_URL` to another `http://127.0.0.1:<port>` before launching the CLI. Actors cannot select configuration, credentials, a service URL or executable through command arguments.
+
+```bash
+python3 -m tmf_research status
+python3 -m tmf_research submit --request-id example-intake-001 --brief-json '{"question":"What makes webhook intake reliable?","depth":"quick","formats":["md","html"],"council":false}'
+python3 -m tmf_research status --id <returned-run-id>
+python3 -m tmf_research result --id <returned-run-id>
+python3 -m tmf_research cancel --id <returned-run-id>
+```
+
+Reuse the **same request ID and brief** after a lost response. It returns the same saved run, including cancelled, failed or interrupted runs; it never automatically restarts work. A different brief with that ID, or a different request while a job is active, is refused. Cancellation reports `cancelling` until the existing worker stops. Standalone `run`, `refine` and `serve` behavior is retained. Operator-managed provider authentication stays with the workbench; the CLI holds its local workbench token in memory only.
+
+Status/results are valid JSON envelopes containing a bounded text range of the original JSON document, its `content_type`, character cursor, total length and SHA256. Continue with `--cursor <next_cursor> --sha256 <sha256>`; a changed document is refused instead of mixing revisions. `next_cursor:null` is the end. Reassemble `text` ranges before parsing that document. The complete pretty-printed CLI response plus existing MCP text wrapper stays within 2400 bytes; an HTTP read is capped at 8 MiB. Larger originals remain with Research. Result references name the original exports; partial, failed, withheld and interrupted evidence is not upgraded into success.
+
+The packaged `tmf_research/mc/allow.json` and `mc/tool-annotations.json` are standard metadata inputs for MC's existing generic CLI wrapper/install owner: four commands only; status/result read-only, submit/cancel mutating. They are **not** a new MCP server or transport and do not establish an installed connection by themselves. The shared CLI shim belongs to MC, not this repository. Applying those inputs, repairing its generic wrapped-help parser, role/profile grants, governed tool execution and installed acceptance are the separate MC integration slice. No model job, provider compatibility or installed MC acceptance is claimed by these CLI tests.
+
 ### Existing evidence/report commands
 
 Python 3.11+. Core commands have no third-party Python runtime dependencies.

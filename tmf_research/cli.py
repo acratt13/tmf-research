@@ -228,9 +228,29 @@ def main(argv=None):
     inspect.add_argument("--rea-command", default='["rea"]', help="JSON array command prefix; never interpreted by a shell")
     inspect.add_argument("--timeout", type=int, default=60)
     inspect.add_argument("--output", required=True)
+    submit = sub.add_parser("submit", help="Submit a brief to the running workbench")
+    submit.add_argument("--request-id", required=True, help="Stable id: reuse it when retrying this same brief")
+    submit.add_argument("--brief-json", required=True, help="Research brief JSON; no model-selected configuration")
+    for command in ('status', 'result', 'cancel'):
+        client = sub.add_parser(command, help={'status': 'Read workbench or job state', 'result': 'Read retained job results', 'cancel': 'Request cancellation of one job'}[command])
+        client.add_argument('--id', required=command != 'status')
+        if command != 'cancel':
+            client.add_argument('--cursor', type=int, default=0)
+            client.add_argument('--sha256', help='Previous page hash; refuses a changed result')
     args = parser.parse_args(argv)
     try:
-        if args.command == "decision-trial":
+        if args.command in ('submit', 'status', 'result', 'cancel'):
+            from .client import execute, WorkbenchError
+            try:
+                print(dump(execute(args)), end='')
+                return 0
+            except WorkbenchError as exc:
+                print(dump({'status': 'refused' if exc.status else 'unavailable', 'http_status': exc.status, 'reason': str(exc)}), end='')
+                return 1
+            except (ValueError, TypeError, OSError):
+                print(dump({'status': 'refused', 'reason': 'Invalid lifecycle request or operator workbench configuration'}), end='')
+                return 1
+        elif args.command == "decision-trial":
             from .decisions import run_trial
             from .providers import ProviderError
             try:
