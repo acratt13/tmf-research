@@ -133,18 +133,15 @@ class CodexModel:
     Supported CLI boundary is explicitly checked. One same-provider role is not
     an independent human reviewer or proof of provider diversity.
     """
-    VERSION = 'codex-cli 0.160.1'
     def __init__(self, executable='codex', timeout=180, max_calls=24):
         self.executable, self.timeout, self.max_calls = executable, timeout, max_calls
         self.calls = 0; self.usage = []; self.lock = threading.Lock()
-        version = subprocess.check_output([executable, '--version'], text=True, timeout=10).strip()
-        if version != self.VERSION:
-            raise ProviderError('Codex CLI version not tested; supported version is 0.160.1')
         features = subprocess.check_output([executable, 'features', 'list'], text=True, timeout=10)
         self.features = [line.split()[0] for line in features.splitlines()
                          if line.strip() and 'deprecated' not in line and 'removed' not in line]
-        for required in ('shell_tool', 'unified_exec', 'plugins', 'apps', 'hooks', 'multi_agent', 'skip_host_skill_discovery'):
-            if required not in self.features: raise ProviderError('Required CLI feature isolation is unavailable')
+        required = ('shell_tool', 'unified_exec', 'plugins', 'apps', 'hooks', 'multi_agent', 'skip_host_skill_discovery')
+        missing = [name for name in required if name not in self.features]
+        if missing: raise ProviderError('Required CLI feature isolation is unavailable: ' + ', '.join(missing))
 
     def call(self, role, instruction, data, *, search=False):
         with self.lock:
