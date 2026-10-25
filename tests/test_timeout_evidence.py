@@ -115,7 +115,9 @@ assert.equal(timedOutSection([]),null);
             retained = ''.join(p.read_text() for p in store.directory(run).glob('*.json'))
             for secret in sentinels:
                 self.assertNotIn(secret, retained)
-            self.assertEqual(json.loads((store.directory(run)/'role-calls.json').read_text())[0], role)
+            retained = json.loads((store.directory(run)/'role-calls.json').read_text())[0]
+            self.assertEqual({k: v for k, v in retained.items() if k not in ('input', 'input_sha256', 'input_redacted')}, role)
+            self.assertEqual(retained['input']['role'], role['role'])
             self.assertEqual(state['outputs'], [])
 
 

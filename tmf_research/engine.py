@@ -178,6 +178,14 @@ class RunStore:
             except (ValueError, KeyError, OSError): continue
 
 
+def retain_role_value(entry, key, value):
+    raw = json.dumps(value, ensure_ascii=False)
+    saved = json.loads(retained_diagnostic(raw, limit=None))
+    entry[key] = saved
+    entry[key + '_sha256'] = hashlib.sha256(raw.encode()).hexdigest()
+    entry[key + '_redacted'] = saved != value
+
+
 class ResearchEngine:
     def __init__(self, store, config=None, model=None, web=None):
         self.store, self.config, self.model_override = store, config or {}, model
@@ -196,24 +204,30 @@ class ResearchEngine:
             query=json.dumps({'brief':data.get('brief',{}),'task':data.get('task',{})},ensure_ascii=False)
             data={**data,'evidence':[{**p,'text':source_passages(p['text'],query,per_source)} for p in packets]}
         entry={'id':uuid.uuid4().hex,'role':role,'started_at':timestamp(),'status':'running','search_enabled':search}
+        retain_role_value(entry, 'input', dict(role=role, instruction=task, data=data, search=search))
         started = time.monotonic()
         with self.role_lock:
             self.role_calls.append(entry);self.store.save(self.run_id,'role-calls.json',self.role_calls)
         try:
             result = self.model.call(role, task, data, search=search)
-            entry.update(status='returned',finished_at=timestamp())
+            with self.role_lock:
+                retain_role_value(entry, 'output', result)
+                entry.update(status='returned',finished_at=timestamp())
         except subprocess.TimeoutExpired as exc:
-            entry.update(status='timed_out', finished_at=timestamp(), error=type(exc).__name__, timeout_seconds=exc.timeout,
-                         partial={'stdout': retained_diagnostic(exc.output), 'stderr': retained_diagnostic(exc.stderr)})
+            with self.role_lock:
+                entry.update(status='timed_out', finished_at=timestamp(), error=type(exc).__name__, timeout_seconds=exc.timeout,
+                             partial={'stdout': retained_diagnostic(exc.output), 'stderr': retained_diagnostic(exc.stderr)})
             raise
         except Exception as exc:
-            entry.update(status='failed',finished_at=timestamp(),error=type(exc).__name__)
+            with self.role_lock:
+                entry.update(status='failed',finished_at=timestamp(),error=type(exc).__name__)
             raise
         finally:
-            entry['elapsed_seconds'] = round(time.monotonic() - started, 3)
             with self.role_lock:
+                entry['elapsed_seconds'] = round(time.monotonic() - started, 3)
                 self.store.save(self.run_id,'role-calls.json',self.role_calls)
-                timed_out = [r for r in self.role_calls if r['status'] == 'timed_out']
+                timed_out = [{k: v for k, v in r.items() if k not in ('input', 'input_sha256', 'input_redacted')}
+                             for r in self.role_calls if r['status'] == 'timed_out']
                 if timed_out: self.store.update(self.run_id, timed_out_roles=timed_out)
         self.check()
         return result
