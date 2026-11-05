@@ -194,21 +194,19 @@ class CodexModel:
             return result
 
 
-class Crawlee:
-    """The installed remote Crawlee worker, reached through its own MC bridge (plugins/crawlee/mc-plugin/bridge.mjs):
-    JSON-RPC tools/call over stdio, the way plugins/crawlee/test/smoke.py drives it. The connection file names an SSH
-    alias only; credentials stay in the existing SSH mechanism. Source text it returns is untrusted evidence."""
-    def __init__(self, connection, bridge=None, timeout=25):
-        if not isinstance(connection, str) or not Path(connection).is_absolute() or not Path(connection).is_file():
-            raise ProviderError('Crawlee is not configured: set crawlee.connection to the absolute path of its connection JSON')
-        self.connection, self.timeout, self.serial = connection, timeout, 0
-        self.bridge = bridge or str(Path(__file__).resolve().parents[1] / 'plugins' / 'crawlee' / 'mc-plugin' / 'bridge.mjs')
+class McpPlugin:
+    """A plugin's own MCP server over stdio (tools/call, one JSON-RPC message per line): how Research reaches every
+    crawler. Research runs on plugins (Owner 2026-11-06); it never carries a crawler of its own."""
+    def __init__(self, command, env=None, timeout=25, name='plugin'):
+        self.command, self.env, self.timeout, self.name, self.serial = list(command), dict(env or {}), timeout, name, 0
         self.process = None; self.lock = threading.Lock()
     def open(self):
         if self.process is None or self.process.poll() is not None:
-            self.process = subprocess.Popen(['node', self.bridge], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                            text=True, env={'PATH': '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin',
-                                                            'HOME': str(Path.home()), 'CRAWLEE_CONFIG': self.connection})
+            base = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:' + str(Path.home() / '.local' / 'bin'),
+                    'HOME': str(Path.home())}
+            try: self.process = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                                 text=True, env={**base, **self.env})
+            except OSError as exc: raise ProviderError(f'The {self.name} plugin could not start ({type(exc).__name__})') from exc
         return self.process
     def call(self, name, arguments):
         import select
@@ -219,17 +217,17 @@ class Crawlee:
                                                 'params': {'name': name, 'arguments': arguments}}) + '\n')
                 process.stdin.flush()
             except (BrokenPipeError, OSError) as exc:
-                raise ProviderError('Remote Crawlee transport unavailable') from exc
+                raise ProviderError(f'The {self.name} plugin transport is unavailable') from exc
             if not select.select([process.stdout], [], [], self.timeout)[0]:
-                self.close(); raise ProviderError(f'Crawlee did not answer {name} within {self.timeout}s')
+                self.close(); raise ProviderError(f'The {self.name} plugin did not answer {name} within {self.timeout}s')
             line = process.stdout.readline()
-            if not line: self.close(); raise ProviderError('Remote Crawlee transport closed')
+            if not line: self.close(); raise ProviderError(f'The {self.name} plugin closed its transport')
         response = json.loads(line)
-        if 'error' in response: raise ProviderError(f'Crawlee {name}: {str(response["error"])[:300]}')
+        if 'error' in response: raise ProviderError(f'{self.name} {name}: {str(response["error"])[:300]}')
         result = response.get('result') or {}
         try: data = json.loads(result['content'][0]['text'])
-        except (KeyError, IndexError, TypeError, ValueError) as exc: raise ProviderError(f'Crawlee {name} returned no JSON') from exc
-        if result.get('isError'): raise ProviderError(f'Crawlee {name}: {str(data)[:300]}')
+        except (KeyError, IndexError, TypeError, ValueError) as exc: raise ProviderError(f'{self.name} {name} returned no JSON') from exc
+        if result.get('isError'): raise ProviderError(f'{self.name} {name}: {str(data)[:300]}')
         return data
     def close(self):
         if self.process is not None:
@@ -237,3 +235,23 @@ class Crawlee:
             try: self.process.wait(timeout=5)
             except subprocess.TimeoutExpired: self.process.kill()
             self.process = None
+
+
+class Crawlee(McpPlugin):
+    """The installed remote Crawlee worker, reached through its own MC bridge (plugins/crawlee/mc-plugin/bridge.mjs), the
+    way plugins/crawlee/test/smoke.py drives it. The connection file names an SSH alias only."""
+    def __init__(self, connection, bridge=None, timeout=25):
+        if not isinstance(connection, str) or not Path(connection).is_absolute() or not Path(connection).is_file():
+            raise ProviderError('Crawlee is not configured: set crawlee.connection to the absolute path of its connection JSON')
+        bridge = bridge or str(Path(__file__).resolve().parents[1] / 'plugins' / 'crawlee' / 'mc-plugin' / 'bridge.mjs')
+        super().__init__(['node', bridge], {'CRAWLEE_CONFIG': connection}, timeout, 'Crawlee')
+
+
+SCRAPLING_COMMAND = ['uv', 'run', '--quiet', '--no-project', '--with', 'scrapling[fetchers]==0.5.1', 'python',
+                     str(Path(__file__).resolve().parents[1] / 'plugins' / 'scrapling' / 'server.py')]
+
+
+class ScraplingPlugin(McpPlugin):
+    """The Scrapling collection plugin (plugins/scrapling/server.py): Research's second crawler, for what Crawlee could not collect."""
+    def __init__(self, command=None, timeout=120):
+        super().__init__(command or SCRAPLING_COMMAND, {}, timeout, 'Scrapling')

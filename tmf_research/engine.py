@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 import uuid
 
 from .cli import dump, validate, REA_OPERATIONS
-from .providers import CodexModel, Crawlee, PublicWeb, ProviderError
+from .providers import CodexModel, Crawlee, PublicWeb, ProviderError, ScraplingPlugin
 from .processes import bounded_run, retained_diagnostic
 
 LENSES = {
@@ -233,7 +233,7 @@ def retain_role_value(entry, key, value):
 class ResearchEngine:
     def __init__(self, store, config=None, model=None, web=None, crawlee=None):
         self.store, self.config, self.model_override = store, config or {}, model
-        self.web = web or PublicWeb(); self.crawlee_override = crawlee; self.acquisition = None
+        self.web = web or PublicWeb(); self.crawlee_override = crawlee; self.acquisition = None; self.scrapling_factory = None
         self.cancelled = threading.Event()
         self.errors = []; self.sources = []; self.packets = []; self.findings = []; self.requirements = []
         self.gaps = []; self.reviewed = {}; self.serial = 0; self.round = 0
@@ -329,7 +329,8 @@ class ResearchEngine:
         Never a silent fallback to the public-web fetcher: no Crawlee means no pre-build evidence."""
         # the operator's config, else CRAWLEE_CONFIG (the variable the bridge itself reads; MC's install sets it on the workbench)
         crawlee = self.crawlee_override or Crawlee((self.config.get('crawlee') or {}).get('connection') or os.environ.get('CRAWLEE_CONFIG'))
-        self.acquisition = {'provider': 'crawlee', 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
+        self.acquisition = {'provider': 'crawlee', 'crawlers': ['crawlee'], 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
+        job_site, collected = {}, set()
         sites = {}
         for candidate in candidates:
             url = candidate.get('url') if isinstance(candidate, dict) else None
@@ -343,7 +344,7 @@ class ResearchEngine:
                 try:
                     job = crawlee.call('crawlee_start', {'urls': urls, 'allowed_domains': [host], 'max_pages': 5, 'max_depth': 1,
                                                          'topic': topic[:200], 'tags': [t[:60] for t in tags]})
-                    self.acquisition['jobIds'].append(job['id'])
+                    self.acquisition['jobIds'].append(job['id']); job_site[job['id']] = host
                 except (ProviderError, KeyError, TypeError) as exc:
                     self.acquisition['jobs'].append({'site': host, 'status': 'not started', 'reason': str(exc)[:300]}); self.error(f'Crawlee job for {host} not started')
             self.event('swarm', f'Crawlee swarm: {len(self.acquisition["jobIds"])} job(s) across {len(sites)} site(s).')
@@ -367,7 +368,7 @@ class ResearchEngine:
                     if len([x for x in self.sources if x.get('url')]) >= limit: break
                     sid = f'S{len(self.sources)+1:03}'
                     source = {'id': sid, 'title': str(item.get('title') or item.get('url'))[:200], 'url': item.get('final_url') or item.get('url'),
-                              'retrieved_at': item.get('retrieved_at') or timestamp(), 'scope': f'Crawlee swarm job {job_id}, source {item.get("id")}.',
+                              'crawler': 'crawlee', 'retrieved_at': item.get('retrieved_at') or timestamp(), 'scope': f'Crawlee swarm job {job_id}, source {item.get("id")}.',
                               'limitations': 'Collected by the remote Crawlee worker; untrusted reference text. No runtime behavior tested.'}
                     if item.get('state') != 'available' or not item.get('id'):
                         source.update(state='unavailable', limitations=f'Crawlee could not collect it ({str(item.get("reason", "unavailable"))[:200]}); no claim support.')
@@ -381,17 +382,63 @@ class ResearchEngine:
                             if partial: source['limitations'] += ' Read the first 20000 characters of the saved text.'
                             (directory / (sid + '.txt')).write_text(text)
                             self.packets.append({'id': sid, 'title': source['title'], 'url': source['url'], 'text': text, 'state': source['state']})
-                            self.acquisition['sourceHashes'].append(digest)
+                            self.acquisition['sourceHashes'].append(digest); collected.add(job_site.get(job_id))
                         except (ProviderError, KeyError, TypeError, ValueError) as exc:
                             source.update(state='unavailable', limitations=f'Crawlee read failed ({type(exc).__name__}); no claim support.')
                     self.sources.append(source)
                 if state.get('status') in ('completed', 'partial', 'failed') and state.get('sources'):
                     try: self.acquisition['packs'].append({'job': job_id, 'artifacts': crawlee.call('crawlee_pack', {'job_id': job_id}).get('artifacts', [])})
                     except ProviderError as exc: self.error(f'Crawlee pack for {job_id} unavailable ({str(exc)[:120]})')
+            # THE SCRAPLING PLUGIN for what Crawlee could not collect (blocked, changed layout, timed out): named, never quiet
+            blocked = [host for host in list(sites)[:8] if host not in collected]
+            if blocked: self.scrapling_pass({host: sites[host] for host in blocked}, limit, directory)
         finally:
             if not self.crawlee_override: crawlee.close()
             self.store.save(self.run_id, 'sources.json', self.sources)
             self.store.save(self.run_id, 'acquisition.json', self.acquisition)
+    def scrapling_pass(self, sites, limit, directory):
+        """The Scrapling plugin (plugins/scrapling) collects the sites the Crawlee worker could not. Three plugin processes in
+        parallel, each source hash-checked into the same evidence review; an unavailable plugin is said once, by name."""
+        self.event('swarm', f'Scrapling plugin: collecting {len(sites)} site(s) the Crawlee worker could not ({", ".join(sites)}).')
+        record = {'sites': list(sites), 'fetched': 0, 'failed': 0}; self.acquisition['scrapling'] = record
+        make = self.scrapling_factory or (lambda: ScraplingPlugin(**((self.config.get('crawlers') or {}).get('scrapling') or {})))
+        probe = make()
+        try: record['version'] = probe.call('scrapling_status', {}).get('version')
+        except ProviderError as exc:
+            record['unavailable'] = str(exc)[:300]; self.error(f'Scrapling plugin unavailable for {len(sites)} site(s): {str(exc)[:160]}')
+            probe.close(); return
+        if 'scrapling' not in self.acquisition['crawlers']: self.acquisition['crawlers'].append('scrapling')
+        urls = [u for host_urls in sites.values() for u in host_urls[:3]]
+        clients = [probe] + [make() for _ in range(min(2, max(0, len(urls) - 1)))]
+        results = {}
+        try:
+            with ThreadPoolExecutor(max_workers=len(clients)) as pool:
+                chunks = [urls[i::len(clients)] for i in range(len(clients))]
+                def run(client, chunk):
+                    for url in chunk:
+                        try: results[url] = client.call('scrapling_fetch', {'url': url})
+                        except ProviderError as exc: results[url] = exc
+                for future in as_completed([pool.submit(run, c, ch) for c, ch in zip(clients, chunks)]): future.result()
+        finally:
+            for client in clients: client.close()
+        for url in urls:
+            self.check()
+            if len([x for x in self.sources if x.get('url')]) >= limit: break
+            got, sid = results.get(url, ProviderError('not collected')), f'S{len(self.sources)+1:03}'
+            source = {'id': sid, 'title': url[:200], 'url': url, 'crawler': 'scrapling', 'retrieved_at': timestamp(),
+                      'scope': 'Scrapling plugin, for a site the Crawlee worker could not collect.',
+                      'limitations': 'Untrusted reference text collected by the Scrapling plugin. No runtime behavior tested.'}
+            text = got.get('text', '') if isinstance(got, dict) else ''
+            if isinstance(got, Exception) or hashlib.sha256(text.encode()).hexdigest() != got.get('text_sha256'):
+                reason = str(got)[:200] if isinstance(got, Exception) else 'text does not match its hash'
+                source.update(state='unavailable', limitations=f'Scrapling could not collect it ({reason}); no claim support.'); record['failed'] += 1
+            else:
+                source.update(state='available', url=got.get('final_url') or url, requested_url=url, artifact_sha256=got['text_sha256'],
+                              fetcher=got.get('fetcher'), retrieved_at=got.get('retrieved_at') or source['retrieved_at'])
+                (directory / (sid + '.txt')).write_text(text)
+                self.packets.append({'id': sid, 'title': source['title'], 'url': source['url'], 'text': text, 'state': 'available'})
+                self.acquisition['sourceHashes'].append(got['text_sha256']); record['fetched'] += 1
+            self.sources.append(source)
     def spec_doc(self, synthesis, accepted, requirements, unknowns):
         """The workstream's spec doc in chapters (cn-bdaf883f DOC OUT); the builders review it, Jev reads it, then they cut tickets."""
         self.event('spec', 'Spec writer is writing the workstream doc in chapters from reviewed findings.')
@@ -848,9 +895,9 @@ class ResearchEngine:
                 (self.store.directory(run_id)/'outputs').mkdir(exist_ok=True)
                 (self.store.directory(run_id)/'outputs'/'spec.md').write_text(spec['markdown']);outputs=list(outputs)+['spec.md']
             acquired=bool(self.acquisition and self.acquisition['provider']=='crawlee' and self.acquisition['sourceHashes'])
-            if not acquired: self.error('No Crawlee-collected source backs this result')
+            if not acquired: self.error('No crawler-collected (Crawlee or Scrapling plugin) source backs this result')
             self.store.save(run_id,'pre-build.json',{'schema':PRE_BUILD_SCHEMA,'preset':'pre-build','spec':spec,
-                'sources':[{k:x[k] for k in ('id','title','url','state','artifact_sha256') if k in x} for x in self.sources],
+                'sources':[{k:x[k] for k in ('id','title','url','state','artifact_sha256','crawler','fetcher') if k in x} for x in self.sources],
                 'unknowns':unknowns,'artifacts':list(outputs),'acquisition':self.acquisition or {'provider':'unavailable','jobIds':[],'sourceHashes':[]}})
         partial=bool(self.errors or (self.request.get('preset')=='pre-build' and not spec) or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
         self.store.save(run_id,'usage.json',{'calls':getattr(self.model,'calls',None),'roles':getattr(self.model,'usage',[]),

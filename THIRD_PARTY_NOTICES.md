@@ -44,3 +44,7 @@ TMF Council's critical-perspective approach was informed by the War Council shar
 ## DesignCraft
 
 Optional external presentation engine, not bundled. Upstream: https://github.com/storytold/designcraft (MIT OR Apache-2.0). Tested CLI 0.9.0 was privately staged and verified against the upstream release SHA256SUMS. Its bundled fonts retain their own licenses. Generated workflow content and scripts are original TMF Research output.
+
+## Scrapling (plugins/scrapling runtime dependency)
+
+D4Vinci/Scrapling 0.5.1, BSD-3-Clause, Copyright (c) 2024, Karim shoair. Resolved by uv at run time (`scrapling[fetchers]==0.5.1`); not vendored.
