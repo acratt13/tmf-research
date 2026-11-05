@@ -2,6 +2,8 @@
 and the workstream spec doc in chapters, returned as mc-pre-build/1."""
 import hashlib
 import json
+import os
+from unittest.mock import patch
 import tempfile
 import unittest
 from tmf_research.engine import brief, ResearchEngine, RunStore, PRESETS
@@ -101,6 +103,12 @@ class PreBuildTests(unittest.TestCase):
         self.assertTrue(any('spec doc withheld' in e for e in state['errors']), state['errors'])
         self.assertIsNone(json.loads((store.directory(rid) / 'pre-build.json').read_text())['spec'])
         self.assertNotIn('spec.md', state['outputs'])
+
+    def test_crawlee_config_env_is_the_fallback_connection(self):
+        with tempfile.NamedTemporaryFile(suffix='.json') as file, patch.dict(os.environ, {'CRAWLEE_CONFIG': file.name}), \
+                patch('tmf_research.engine.Crawlee', side_effect=lambda connection: (_ for _ in ()).throw(ProviderError('used ' + str(connection)))):
+            store, rid, _ = self.run_job(config={})
+        self.assertTrue(any('used ' + file.name in e for e in store.read(rid)['errors']), store.read(rid)['errors'])
 
     def test_the_preset_budget_covers_the_six_member_council(self):
         self.assertGreaterEqual(PRESETS['pre-build']['limits']['calls'], 24)

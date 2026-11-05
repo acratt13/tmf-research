@@ -327,7 +327,8 @@ class ResearchEngine:
         """PRE-BUILD INGRESS: a parallel Crawlee swarm on the installed remote worker. One bounded job per site (the worker
         runs two at once and queues up to eight), polled to a terminal state, each source read back hash-checked and packed.
         Never a silent fallback to the public-web fetcher: no Crawlee means no pre-build evidence."""
-        crawlee = self.crawlee_override or Crawlee((self.config.get('crawlee') or {}).get('connection'))
+        # the operator's config, else CRAWLEE_CONFIG (the variable the bridge itself reads; MC's install sets it on the workbench)
+        crawlee = self.crawlee_override or Crawlee((self.config.get('crawlee') or {}).get('connection') or os.environ.get('CRAWLEE_CONFIG'))
         self.acquisition = {'provider': 'crawlee', 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
         sites = {}
         for candidate in candidates:
