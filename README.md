@@ -27,6 +27,14 @@ Choose any combination of **Understand / Compare / Build / Audit / Offer a servi
 
 For command-line research, see [example brief](examples/research-brief.json) and [configuration](examples/workbench-config.json). Run files and evidence stay under ignored `runs/` by default. Selected brief, public passages and local REA excerpts are sent to the model provider; select only material you intend to share.
 
+### Pre-build preset (a builders' workstream, before it is built)
+
+`{"preset": "pre-build", "question": "...", "workstream": {"id", "ticket", "goal", "whoFor", "existing": [], "references": [], "constraints": [], "unknowns": []}}`. The preset decides the rest, so a launcher passes the preset only: quick depth, builder + Markdown outputs, and the Workstream Council (systems, full-stack, design, customer, challenger and a Canon keeper that checks the spec against `workstream.existing`; `"council": false` turns it off). REA runs only when the brief names `inspections` (tearing down an existing app or site).
+
+Sources come from a parallel **Crawlee swarm** on the installed remote worker: one bounded job per site (`crawlee_start` / `crawlee_status` / `crawlee_read` / `crawlee_pack` through `plugins/crawlee/mc-plugin/bridge.mjs`). Configure it with `{"crawlee": {"connection": "/absolute/private/connection.json"}}` in the workbench config. There is no public-web fallback: with no Crawlee the run fails and says why.
+
+The result adds `pre_build` (`mc-pre-build/1`): the workstream spec doc in chapters (summary, what-exists, research, requirements, design, build-1..n, proof), its sources, unknowns, artifacts and the Crawlee provenance (job ids, source hashes). Research writes the doc; the builders review it and cut the tickets. A run is `completed` only with the spec and Crawlee-collected sources; otherwise it is `partial` or `failed` with the reason.
+
 ### Short workbench lifecycle commands
 
 The workbench above remains the only job owner. These commands contact that running service and exit promptly; they do not launch another worker or run the model inside a tool call. The operator can set `TMF_RESEARCH_URL` to another `http://127.0.0.1:<port>` before launching the CLI. Actors cannot select configuration, credentials, a service URL or executable through command arguments.

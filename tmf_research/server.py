@@ -53,8 +53,10 @@ def serve(root, config=None, port=8765):
                     if report is None and not timed_out: raise FileNotFoundError()
                     council=directory/'council.json'
                     published=directory/'published-analysis.json'
+                    pre_build=directory/'pre-build.json'   # mc-pre-build/1, only for a pre-build run
                     self.reply(200,{'report':report,'timed_out_roles':timed_out,'council':json.loads(council.read_text()) if council.exists() else None,
-                                    'analysis':json.loads(published.read_text()) if published.exists() else None});return
+                                    'analysis':json.loads(published.read_text()) if published.exists() else None,
+                                    **({'pre_build':json.loads(pre_build.read_text())} if pre_build.exists() else {})});return
                 if path.startswith('/api/runs/'):
                     run_id=path.rsplit('/',1)[1]
                     request=json.loads((store.directory(run_id)/'brief.json').read_text())

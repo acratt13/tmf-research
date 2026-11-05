@@ -143,7 +143,7 @@ class EngineTests(unittest.TestCase):
         self.assertLess(document.index('Analysis / proposed design'),document.index('## Findings'))
         self.assertLess(document.index('Proposed requirements and acceptance'),document.index('## Findings'))
     def test_council_rejects_unknown_unbounded_or_empty_selection(self):
-        for settings in [{'council_members':['invented']},{'council_members':['design']*5},
+        for settings in [{'council_members':['invented']},{'council_members':['design']*7},
                          {'council_members':[],'council_auto_experts':False},
                          {'council_auto_experts':'yes'}]:
             with self.subTest(settings=settings),self.assertRaises(ValueError):

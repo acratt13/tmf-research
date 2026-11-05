@@ -192,3 +192,48 @@ class CodexModel:
                 self.usage.append({'call': number, 'role': role, 'seconds': round(time.monotonic()-start, 2),
                                    'usage': usage, 'web_search_calls': sum(i.get('type') == 'web_search' for i in tool_items)})
             return result
+
+
+class Crawlee:
+    """The installed remote Crawlee worker, reached through its own MC bridge (plugins/crawlee/mc-plugin/bridge.mjs):
+    JSON-RPC tools/call over stdio, the way plugins/crawlee/test/smoke.py drives it. The connection file names an SSH
+    alias only; credentials stay in the existing SSH mechanism. Source text it returns is untrusted evidence."""
+    def __init__(self, connection, bridge=None, timeout=25):
+        if not isinstance(connection, str) or not Path(connection).is_absolute() or not Path(connection).is_file():
+            raise ProviderError('Crawlee is not configured: set crawlee.connection to the absolute path of its connection JSON')
+        self.connection, self.timeout, self.serial = connection, timeout, 0
+        self.bridge = bridge or str(Path(__file__).resolve().parents[1] / 'plugins' / 'crawlee' / 'mc-plugin' / 'bridge.mjs')
+        self.process = None; self.lock = threading.Lock()
+    def open(self):
+        if self.process is None or self.process.poll() is not None:
+            self.process = subprocess.Popen(['node', self.bridge], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                            text=True, env={'PATH': '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin',
+                                                            'HOME': str(Path.home()), 'CRAWLEE_CONFIG': self.connection})
+        return self.process
+    def call(self, name, arguments):
+        import select
+        with self.lock:
+            process = self.open(); self.serial += 1
+            try:
+                process.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': self.serial, 'method': 'tools/call',
+                                                'params': {'name': name, 'arguments': arguments}}) + '\n')
+                process.stdin.flush()
+            except (BrokenPipeError, OSError) as exc:
+                raise ProviderError('Remote Crawlee transport unavailable') from exc
+            if not select.select([process.stdout], [], [], self.timeout)[0]:
+                self.close(); raise ProviderError(f'Crawlee did not answer {name} within {self.timeout}s')
+            line = process.stdout.readline()
+            if not line: self.close(); raise ProviderError('Remote Crawlee transport closed')
+        response = json.loads(line)
+        if 'error' in response: raise ProviderError(f'Crawlee {name}: {str(response["error"])[:300]}')
+        result = response.get('result') or {}
+        try: data = json.loads(result['content'][0]['text'])
+        except (KeyError, IndexError, TypeError, ValueError) as exc: raise ProviderError(f'Crawlee {name} returned no JSON') from exc
+        if result.get('isError'): raise ProviderError(f'Crawlee {name}: {str(data)[:300]}')
+        return data
+    def close(self):
+        if self.process is not None:
+            self.process.terminate()
+            try: self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired: self.process.kill()
+            self.process = None

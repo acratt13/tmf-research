@@ -11,10 +11,11 @@ import subprocess
 import shutil
 import threading
 import time
+from urllib.parse import urlsplit
 import uuid
 
 from .cli import dump, validate, REA_OPERATIONS
-from .providers import CodexModel, PublicWeb, ProviderError
+from .providers import CodexModel, Crawlee, PublicWeb, ProviderError
 from .processes import bounded_run, retained_diagnostic
 
 LENSES = {
@@ -29,7 +30,20 @@ DEPTHS = {'quick': {'sources': 4, 'rounds': 0, 'calls': 16},
           'detailed': {'sources': 8, 'rounds': 1, 'calls': 24},
           'deep': {'sources': 12, 'rounds': 2, 'calls': 32}}
 PRESETS = {'tmf-service-blueprint': {'lenses': list(LENSES), 'depth': 'deep',
-                                    'formats': ['md', 'html', 'pdf', 'docx', 'xlsx', 'pptx', 'diagram', 'builder'], 'council': True}}
+                                    'formats': ['md', 'html', 'pdf', 'docx', 'xlsx', 'pptx', 'diagram', 'builder'], 'council': True},
+           # PRE-BUILD (Owner 2026-11-05, Canon cn-bdaf883f): research for a builders' workstream before it is built. A fast
+           # parallel Crawlee swarm, quick depth, the Workstream Council, REA only for a teardown the brief asks for, and the
+           # workstream's spec doc in chapters. A launcher passes the preset only; what it means lives here.
+           'pre-build': {'lenses': ['build', 'understand'], 'depth': 'quick', 'formats': ['builder', 'md'], 'council': True,
+                         'council_members': ['systems', 'fullstack', 'design', 'customer', 'challenger', 'canon'],
+                         'council_auto_experts': True, 'limits': {'sources': 20, 'calls': 30}}}
+PRE_BUILD_SCHEMA = 'mc-pre-build/1'
+# The workstream doc's chapters (cn-bdaf883f "DOC OUT"): industry PRD + technical design; chapters = epics, never tickets.
+SPEC_CHAPTERS = [('summary', 'Summary: goal, done, out of scope'), ('what-exists', 'What exists (sourced)'),
+                 ('research', 'Research (sourced: references, how others do it, teardowns)'),
+                 ('requirements', 'Requirements: user stories + acceptance criteria'), ('design', 'Design')]
+WORKSTREAM_TEXT = {'id': 128, 'ticket': 128, 'goal': 3000, 'whoFor': 1000}
+WORKSTREAM_LISTS = ('existing', 'references', 'constraints', 'unknowns')
 COUNCIL = [
     ('Customer advocate', 'Challenge buyer need, usefulness, adoption and evidence of demand.'),
     ('Delivery architect', 'Challenge data models, integrations, edge cases and acceptance feasibility.'),
@@ -44,6 +58,8 @@ COUNCIL_SPECIALISTS = {
     'fullstack': ('Full-stack specialist', 'Challenge implementation seams, data contracts, tests and recovery behavior.'),
     'design': ('Design systems specialist', 'Challenge tokens, component consistency, tool interoperability, live collaboration and accessibility.'),
     'growth': ('Marketing and SEO specialist', 'Challenge positioning, discoverability, distribution and measurable acquisition evidence.'),
+    'canon': ('Canon keeper', 'Check every proposal against what already exists and what the Owner decided (the brief\'s workstream.existing). '
+              'Name each rebuild of something that exists and each contradiction of a decision, quoting the line it contradicts.'),
 }
 DEFAULT_COUNCIL = ['customer', 'systems', 'business', 'challenger']
 
@@ -75,8 +91,35 @@ def source_passages(text, query, budget=16000):
     return '\n\n'.join(f'[Snapshot characters {offset}:{offset+len(window)}]\n{window}' for offset,window in sorted(selected.items()))
 
 
+def workstream(value):
+    """A builders' workstream brief (cn-bdaf883f BRIEF IN): text fields and short lists, bounded."""
+    if not isinstance(value, dict): raise ValueError('The pre-build preset needs a workstream object')
+    out = {}
+    for key, limit in WORKSTREAM_TEXT.items():
+        item = value.get(key, '')
+        if not isinstance(item, str) or len(item) > limit: raise ValueError(f'workstream.{key} must be text of at most {limit} characters')
+        if item.strip(): out[key] = item.strip()
+    if 'goal' not in out: raise ValueError('workstream.goal is required')
+    for key in WORKSTREAM_LISTS:
+        items = value.get(key, [])
+        if not isinstance(items, list) or len(items) > 40 or any(not isinstance(x, str) or len(x) > 2000 for x in items):
+            raise ValueError(f'workstream.{key} must be at most 40 texts of at most 2000 characters')
+        out[key] = [x.strip() for x in items if x.strip()]
+    unknown = set(value) - set(WORKSTREAM_TEXT) - set(WORKSTREAM_LISTS)
+    if unknown: raise ValueError('Unknown workstream fields: ' + ', '.join(sorted(unknown)))
+    return out
+
+
 def brief(value):
     if not isinstance(value, dict): raise ValueError('Research brief must be an object')
+    preset = value.get('preset')
+    if preset is not None:
+        if preset != 'pre-build': raise ValueError('Unknown research preset')
+        # the preset decides depth, lenses, formats and Council; a brief may still turn the Council off (light or none)
+        fixed = {k: v for k, v in PRESETS['pre-build'].items() if k != 'limits'}
+        value = {**value, **fixed, 'council': value.get('council', True), 'workstream': workstream(value.get('workstream'))}
+        references = [x for x in value['workstream']['references'] if re.fullmatch(r'https://\S{1,1990}', x)]
+        value['urls'] = list(dict.fromkeys(list(value.get('urls', [])) + references))[:12]
     question = value.get('question', '')
     if not isinstance(question,str):raise ValueError('Research question must be text')
     question=question.strip()
@@ -102,9 +145,9 @@ def brief(value):
         raise ValueError('Select at most 12 configured document names')
     if not isinstance(value.get('council',True),bool):raise ValueError('Challenge round must be true or false')
     members = value.get('council_members', DEFAULT_COUNCIL)
-    if (not isinstance(members, list) or len(members) > 4
+    if (not isinstance(members, list) or len(members) > 6
             or any(not isinstance(x, str) or x not in COUNCIL_SPECIALISTS for x in members)):
-        raise ValueError('Select up to four known Council specialists')
+        raise ValueError('Select up to six known Council specialists')
     auto_experts = value.get('council_auto_experts', True)
     if not isinstance(auto_experts, bool):raise ValueError('Automatic domain specialists must be true or false')
     if value.get('council', True) and not members and not auto_experts:
@@ -112,6 +155,7 @@ def brief(value):
     return dict(question=question, context=context, lenses=lenses, formats=formats, depth=depth,
                 council_members=list(dict.fromkeys(members)), council_auto_experts=auto_experts,
                 council=bool(value.get('council', True)), urls=list(dict.fromkeys(urls)), inspections=inspections, documents=list(dict.fromkeys(documents)),
+                **({'preset': preset, 'workstream': value['workstream']} if preset else {}),
                 privacy='Your question, context, retrieved public passages, selected local documents and excerpts from selected local REA artifacts are sent to the model provider. Select only material you intend to share. Local run records remain on this machine.')
 
 
@@ -187,9 +231,9 @@ def retain_role_value(entry, key, value):
 
 
 class ResearchEngine:
-    def __init__(self, store, config=None, model=None, web=None):
+    def __init__(self, store, config=None, model=None, web=None, crawlee=None):
         self.store, self.config, self.model_override = store, config or {}, model
-        self.web = web or PublicWeb()
+        self.web = web or PublicWeb(); self.crawlee_override = crawlee; self.acquisition = None
         self.cancelled = threading.Event()
         self.errors = []; self.sources = []; self.packets = []; self.findings = []; self.requirements = []
         self.gaps = []; self.reviewed = {}; self.serial = 0; self.round = 0
@@ -279,6 +323,103 @@ class ResearchEngine:
                 self.error(f'{sid}: source unavailable; see source register')
             self.sources.append(source)
         self.store.save(self.run_id, 'sources.json', self.sources)
+    def swarm(self, candidates, limit, deadline=240):
+        """PRE-BUILD INGRESS: a parallel Crawlee swarm on the installed remote worker. One bounded job per site (the worker
+        runs two at once and queues up to eight), polled to a terminal state, each source read back hash-checked and packed.
+        Never a silent fallback to the public-web fetcher: no Crawlee means no pre-build evidence."""
+        crawlee = self.crawlee_override or Crawlee((self.config.get('crawlee') or {}).get('connection'))
+        self.acquisition = {'provider': 'crawlee', 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
+        sites = {}
+        for candidate in candidates:
+            url = candidate.get('url') if isinstance(candidate, dict) else None
+            host = urlsplit(url).hostname if isinstance(url, str) and url.startswith('https://') else None
+            if host and len(sites.setdefault(host, [])) < 5 and url not in sites[host]: sites[host].append(url)
+        topic = (self.request.get('workstream') or {}).get('goal') or self.request['question']
+        tags = ['pre-build'] + ([self.request['workstream']['id']] if self.request.get('workstream', {}).get('id') else [])
+        try:
+            for host, urls in list(sites.items())[:8]:
+                self.check()
+                try:
+                    job = crawlee.call('crawlee_start', {'urls': urls, 'allowed_domains': [host], 'max_pages': 5, 'max_depth': 1,
+                                                         'topic': topic[:200], 'tags': [t[:60] for t in tags]})
+                    self.acquisition['jobIds'].append(job['id'])
+                except (ProviderError, KeyError, TypeError) as exc:
+                    self.acquisition['jobs'].append({'site': host, 'status': 'not started', 'reason': str(exc)[:300]}); self.error(f'Crawlee job for {host} not started')
+            self.event('swarm', f'Crawlee swarm: {len(self.acquisition["jobIds"])} job(s) across {len(sites)} site(s).')
+            pending, end = list(self.acquisition['jobIds']), time.monotonic() + deadline
+            states = {}
+            while pending and time.monotonic() < end:
+                self.check()
+                for job_id in list(pending):
+                    state = crawlee.call('crawlee_status', {'job_id': job_id})
+                    if state.get('status') not in ('queued', 'running', 'cancelling'): states[job_id] = state; pending.remove(job_id)
+                if pending: time.sleep(2)
+            for job_id in pending:
+                self.error(f'Crawlee job {job_id} still running at the deadline; cancelled, its sources not used')
+                try: crawlee.call('crawlee_cancel', {'job_id': job_id})
+                except ProviderError: pass
+                self.acquisition['jobs'].append({'id': job_id, 'status': 'timed out'})
+            directory = self.store.directory(self.run_id) / 'evidence'; directory.mkdir(exist_ok=True)
+            for job_id, state in states.items():
+                self.acquisition['jobs'].append({'id': job_id, 'status': state.get('status'), **({'reason': str(state['reason'])[:300]} if state.get('reason') else {})})
+                for item in state.get('sources', []):
+                    if len([x for x in self.sources if x.get('url')]) >= limit: break
+                    sid = f'S{len(self.sources)+1:03}'
+                    source = {'id': sid, 'title': str(item.get('title') or item.get('url'))[:200], 'url': item.get('final_url') or item.get('url'),
+                              'retrieved_at': item.get('retrieved_at') or timestamp(), 'scope': f'Crawlee swarm job {job_id}, source {item.get("id")}.',
+                              'limitations': 'Collected by the remote Crawlee worker; untrusted reference text. No runtime behavior tested.'}
+                    if item.get('state') != 'available' or not item.get('id'):
+                        source.update(state='unavailable', limitations=f'Crawlee could not collect it ({str(item.get("reason", "unavailable"))[:200]}); no claim support.')
+                    else:
+                        try:
+                            read = crawlee.call('crawlee_read', {'job_id': job_id, 'source_id': item['id'], 'limit': 20000})
+                            text, digest = str(read.get('text', '')), str(read.get('source', {}).get('text_sha256', ''))
+                            if len(text.strip()) < 100: raise ProviderError('Source has too little readable content')
+                            partial = read.get('end', len(text)) < read.get('total_characters', len(text))
+                            source.update(state='partial' if partial else 'available', artifact_sha256=digest, crawlee={'job': job_id, 'source': item['id']})
+                            if partial: source['limitations'] += ' Read the first 20000 characters of the saved text.'
+                            (directory / (sid + '.txt')).write_text(text)
+                            self.packets.append({'id': sid, 'title': source['title'], 'url': source['url'], 'text': text, 'state': source['state']})
+                            self.acquisition['sourceHashes'].append(digest)
+                        except (ProviderError, KeyError, TypeError, ValueError) as exc:
+                            source.update(state='unavailable', limitations=f'Crawlee read failed ({type(exc).__name__}); no claim support.')
+                    self.sources.append(source)
+                if state.get('status') in ('completed', 'partial', 'failed') and state.get('sources'):
+                    try: self.acquisition['packs'].append({'job': job_id, 'artifacts': crawlee.call('crawlee_pack', {'job_id': job_id}).get('artifacts', [])})
+                    except ProviderError as exc: self.error(f'Crawlee pack for {job_id} unavailable ({str(exc)[:120]})')
+        finally:
+            if not self.crawlee_override: crawlee.close()
+            self.store.save(self.run_id, 'sources.json', self.sources)
+            self.store.save(self.run_id, 'acquisition.json', self.acquisition)
+    def spec_doc(self, synthesis, accepted, requirements, unknowns):
+        """The workstream's spec doc in chapters (cn-bdaf883f DOC OUT); the builders review it, Jev reads it, then they cut tickets."""
+        self.event('spec', 'Spec writer is writing the workstream doc in chapters from reviewed findings.')
+        template = [{'id': cid, 'title': title} for cid, title in SPEC_CHAPTERS] + [
+            {'id': 'build-1', 'title': 'Build chapter 1..n: scope, files, acceptance criteria, risks (one per epic, no tickets)'},
+            {'id': 'proof', 'title': 'Proof + only the questions that need the Owner'}]
+        doc = self.call('Spec writer', 'Write the workstream spec doc in chapters, from reviewed findings only. '
+                        'Return {"title":"...","chapters":[{"id":"...","title":"...","body":"markdown"}]}. Use exactly the chapter ids of the template, '
+                        'in its order, with one or more build-N chapters (build-1, build-2, ...) before proof. Cite source IDs (S001) for every factual claim; '
+                        'a claim without a source is written as UNKNOWN. Keep unknowns visible. Requirements are user stories with acceptance criteria. '
+                        'Do not cut tickets. Respect workstream.constraints and what workstream.existing says already exists: never propose rebuilding it.',
+                        {'brief': self.request, 'template': template, 'findings': accepted, 'requirements': requirements, 'unknowns': unknowns,
+                         'synthesis': {k: synthesis.get(k) for k in ('title', 'summary', 'sections', 'council_synthesis')}})
+        chapters, sources = doc.get('chapters'), {x['id'] for x in self.sources if x['state'] != 'unavailable'}
+        ids = [c.get('id') for c in chapters] if isinstance(chapters, list) and all(isinstance(c, dict) for c in chapters) else []
+        builds = [i for i in ids if isinstance(i, str) and re.fullmatch(r'build-\d{1,2}', i)]
+        expected = [cid for cid, _ in SPEC_CHAPTERS] + builds + ['proof']
+        if not builds or ids != expected or len(ids) > 16:
+            raise ProviderError('Spec chapters do not follow the template (summary, what-exists, research, requirements, design, build-N, proof)')
+        for chapter in chapters:
+            if not isinstance(chapter.get('title'), str) or not isinstance(chapter.get('body'), str) or not chapter['body'].strip() or len(chapter['body']) > 12000:
+                raise ProviderError(f'Spec chapter {chapter.get("id")} has no usable title or body')
+            cited = set(re.findall(r'\bS\d{3}\b', chapter['body']))
+            if cited - sources: raise ProviderError(f'Spec chapter {chapter["id"]} cites unknown sources: {", ".join(sorted(cited - sources))}')
+        if not set(re.findall(r'\bS\d{3}\b', next(c['body'] for c in chapters if c['id'] == 'research'))):
+            raise ProviderError('The research chapter cites no source')
+        title = str(doc.get('title') or self.request['workstream']['goal'])[:200]
+        clean = [{'id': c['id'], 'title': c['title'][:200], 'body': c['body']} for c in chapters]
+        return {'title': title, 'chapters': clean, 'markdown': f'# {title}\n\n' + '\n\n'.join(f'## {c["title"]}\n\n{c["body"]}' for c in clean) + '\n'}
     def documents(self, selected):
         """Only operator-configured UTF-8 files; source text never supplies paths."""
         definitions=self.config.get('documents',{})
@@ -498,7 +639,7 @@ class ResearchEngine:
         return list(dict.fromkeys(str(q) for p in positions for q in p.get('follow_up_queries',[])[:1]))[:2]
     def execute(self, run_id):
         self.run_id=run_id; self.request=json.loads((self.store.directory(run_id)/'brief.json').read_text())
-        limits=DEPTHS[self.request['depth']]
+        limits={**DEPTHS[self.request['depth']], **(PRESETS.get(self.request.get('preset'), {}).get('limits') or {})}
         try:
             self.model=self.model_override or CodexModel(self.config.get('codex','codex'), max_calls=limits['calls'])
             self.store.update(run_id,status='running')
@@ -521,7 +662,8 @@ class ResearchEngine:
             candidates=self.search(plan.get('queries',[])[:3])
             seed=[{'url':u,'title':u} for u in self.request['urls']]
             # Reserve two web slots for material follow-up in non-quick runs.
-            self.fetch(seed+candidates, limits['sources']-(2 if limits['rounds'] else 0))
+            if self.request.get('preset') == 'pre-build': self.swarm(seed+candidates, limits['sources'])
+            else: self.fetch(seed+candidates, limits['sources']-(2 if limits['rounds'] else 0))
             self.inspect(self.request['inspections'])
             self.documents(self.request.get('documents',[]))
             if not self.packets: raise ProviderError('No readable evidence acquired; research cannot proceed')
@@ -693,10 +835,23 @@ class ResearchEngine:
                     requirements=requirements,unknowns=unknowns,research_log=research_log)
         validate(record);self.store.save(run_id,'report.json',record)
         self.check()
+        spec=None
+        if self.request.get('preset')=='pre-build':
+            try: spec=self.spec_doc(synthesis,accepted,requirements,unknowns)
+            except (ProviderError,ValueError,KeyError,TypeError) as exc: self.error(f'Workstream spec doc withheld: {str(exc)[:200]}')
         from .exports import export_run
         outputs, export_errors=export_run(self.store.directory(run_id),record,synthesis,self.request['formats'],self.config,self.check)
         self.errors.extend(export_errors)
-        partial=bool(self.errors or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
+        if self.request.get('preset')=='pre-build':
+            if spec:
+                (self.store.directory(run_id)/'outputs').mkdir(exist_ok=True)
+                (self.store.directory(run_id)/'outputs'/'spec.md').write_text(spec['markdown']);outputs=list(outputs)+['spec.md']
+            acquired=bool(self.acquisition and self.acquisition['provider']=='crawlee' and self.acquisition['sourceHashes'])
+            if not acquired: self.error('No Crawlee-collected source backs this result')
+            self.store.save(run_id,'pre-build.json',{'schema':PRE_BUILD_SCHEMA,'preset':'pre-build','spec':spec,
+                'sources':[{k:x[k] for k in ('id','title','url','state','artifact_sha256') if k in x} for x in self.sources],
+                'unknowns':unknowns,'artifacts':list(outputs),'acquisition':self.acquisition or {'provider':'unavailable','jobIds':[],'sourceHashes':[]}})
+        partial=bool(self.errors or (self.request.get('preset')=='pre-build' and not spec) or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
         self.store.save(run_id,'usage.json',{'calls':getattr(self.model,'calls',None),'roles':getattr(self.model,'usage',[]),
                                            'limits':limits,'dollar_cost':'unavailable; subscription usage and native-search costs are not a hard monetary budget'})
         with self.store.lock:
