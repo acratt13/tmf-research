@@ -72,6 +72,25 @@ def business_evidence(host, reference, findings, sources):
     return identity,evidence
 
 
+def lead_source_candidates(candidates, retained=()):
+    """Share a bounded discovery shortlist across website hosts, without fetching."""
+    def key(url):
+        if not isinstance(url,str):return None
+        try:
+            parsed=urlsplit(url);host=company_domain(parsed.hostname or '')
+            if parsed.scheme!='https' or parsed.username or parsed.password or parsed.port not in (None,443):return None
+        except ValueError:return None
+        return (host,parsed.path or '/',parsed.query)
+    sites={};seen={value for url in retained if (value:=key(url)) is not None}
+    for candidate in candidates:
+        if not isinstance(candidate,dict):continue
+        value=key(candidate.get('url'))
+        if value is None or value in seen:continue
+        seen.add(value);sites.setdefault(value[0],[]).append(candidate)
+    return [rows[index] for index in range(max((len(rows) for rows in sites.values()),default=0))
+            for rows in sites.values() if index<len(rows)]
+
+
 def normalize(value):
     if value is None: return None
     if not isinstance(value, dict) or value.get('schema') != SCHEMA or value.get('type') not in TYPES:
@@ -135,6 +154,7 @@ def catalog():
             'tools': ['submit', 'status', 'result', 'cancel', 'publish', 'missions', 'pause', 'resume', 'knowledge'],
             'authority': 'All generated knowledge and specialty definitions remain candidates; no agent creation, role deployment, recurring missions or security assessment',
             'canvas': {'app':'tmf-research', 'query':{'run':'saved run id'}},
+            'lead_qualification':'Retained factual official-site industry/location evidence supports scope matches, not buying intent. Scope-supported prospects precede unresolved and outside-scope candidates; alphabetical ties, no invented numeric lead score.',
             'business_evidence':'Company domains need retained factual official-site findings; directory-only identity guesses are withheld. Industry and public location evidence stay separate from requested lead-market scope.',
             'limitations': ['Model review is not independent factual certification', 'Hub role-socket import and distributed runtime acceptance are not established']}
 
@@ -160,7 +180,13 @@ def output_instruction(mission):
         extra=(' Also include startup_sections with exactly these keys: '+', '.join(STARTUP_SECTIONS)+'. Each value has text, label and finding_ids as above; unknown funding, leadership and traction stay unknown, never estimated.') if kind=='startup' else ''
         return common + 'Return {"companies":[{"name":"...","domain":"example.test","finding_ids":["F001"],"sections":{' + ','.join('"'+s+'":{"text":"...","finding_ids":["F001"],"label":"documented|inferred|proposed|unknown"}' for s in COMPANY_SECTIONS) + '}}]}. Funding and traction claims must preserve dates and public-announcement scope. Use inferred/proposed/unknown for opportunities, consulting_questions and possible_services.'+extra
     if kind == 'leads':
-        return common + 'Return {"leads":[{"company":"...","domain":"example.test","industry":"...","opportunity":"...","potential_service":"...","estimated_fit":"...","confidence":"low|medium|high","finding_ids":["F001"],"assumptions":["..."],"industry_evidence":{"text":"...","label":"documented|inferred|unknown","finding_ids":["F001"]},"location":{"text":"...","label":"documented|inferred|unknown","finding_ids":["F001"]}}]}. Explain why the opportunity may fit; a proposed problem is an inference, not a confirmed internal fact. Industry and location must cite supporting findings or stay unknown; requested geography is not evidence of a company location.'
+        return common + 'Return {"leads":[{"company":"...","domain":"example.test","industry":"...","opportunity":"...","potential_service":"...","estimated_fit":"...","confidence":"low|medium|high","finding_ids":["F001"],"assumptions":["..."],"industry_evidence":{"text":"...","label":"documented|inferred|unknown","finding_ids":["F001"]},"location":{"text":"...","label":"documented|inferred|unknown","finding_ids":["F001"]},"opportunity_basis":{"text":"Explain why the cited business facts make this investigation relevant, without inventing a need.","label":"inferred|proposed|unknown","finding_ids":["F001"]},"scope_fit":{"industry":{"status":"match|mismatch|unknown","reason":"...","finding_ids":["F001"]},"geography":{"status":"match|mismatch|unknown","reason":"...","finding_ids":["F001"]}}}],"limitations":["..."]}. ' + (
+            'Discover distinct businesses and collect their official industry and public location/service-area evidence fairly within the source budget. '
+            'Produce one consolidated entry per business website, not duplicate opportunities for the same website. '
+            'A scope match or mismatch needs this business retained factual official-site findings, cited also in industry_evidence/location. '
+            'Requested industry/geography is not evidence: if either is unspecified or its match lacks evidence, scope_fit must be unknown. '
+            'Explain why the opportunity may fit; a proposed problem is an inference, not a confirmed internal fact or buying intent. '
+            'No contact harvesting, person profiling or outreach. If no businesses have usable identity evidence, return an empty leads list and explain the evidence gap in limitations; never invent prospects.')
     if kind == 'market':
         return common + 'Return {"market":{"name":"...","sections":[{"heading":"...","text":"...","finding_ids":["F001"],"label":"documented|inferred|proposed|unknown"}]}}. Cover categories, competitors, pricing, business models, customer needs, trends, applicable regulation and alternatives; missing evidence remains unknown.'
     if kind == 'profession':
@@ -203,7 +229,10 @@ def validate_output(mission, raw, findings, run_id, at, sources=None):
     kind=mission['type']
     if kind in ('company','startup','leads'):
         collection='leads' if kind=='leads' else 'companies'; rows=raw.get(collection)
-        if not isinstance(rows,list) or not rows: raise ValueError('No sourced company/lead output was produced')
+        if not isinstance(rows,list) or (not rows and kind!='leads'): raise ValueError('No sourced company/lead output was produced')
+        if kind=='leads':
+            result['limitations']=texts(raw.get('limitations',[]),'lead discovery limitations')
+            if not rows and not result['limitations']:raise ValueError('An empty lead result must explain the missing business evidence')
         entries={}
         for row in rows:
             if not isinstance(row,dict): raise ValueError('Intelligence entry must be an object')
@@ -225,6 +254,38 @@ def validate_output(mission, raw, findings, run_id, at, sources=None):
                 for key in ('industry_evidence','location'):
                     item[key]=section(row.get(key,{'label':'unknown','text':'No reviewed evidence was retained for '+key.replace('_',' ')}))
                 reference=list(dict.fromkeys(reference+item['industry_evidence']['finding_ids']+item['location']['finding_ids']))
+                item['opportunity_basis']=section(row.get('opportunity_basis',{'label':'unknown','text':'No explicit reviewed opportunity justification was retained.'}))
+                if item['opportunity_basis']['label'] not in ('inferred','proposed','unknown'):
+                    raise ValueError('Lead opportunity justification must remain inferred, proposed or unknown')
+                if item['opportunity_basis']['label']!='unknown':
+                    basis_ids=item['opportunity_basis']['finding_ids']
+                    if any(known[i]['label'] not in ('documented','observed') for i in basis_ids):raise ValueError('Lead opportunity basis requires factual business evidence')
+                    try:official_basis={r['finding_id'] for r in business_evidence(host,basis_ids,known,sources or [])[0]}
+                    except ValueError:raise ValueError('Lead opportunity basis requires this business official-site evidence') from None
+                    if set(basis_ids)-official_basis:raise ValueError('Lead opportunity basis requires this business official-site evidence')
+                reference=list(dict.fromkeys(reference+item['opportunity_basis']['finding_ids']))
+                fits=row.get('scope_fit',{})
+                if not isinstance(fits,dict) or set(fits)-{'industry','geography'}:raise ValueError('Unknown lead scope fit fields')
+                item['scope_fit']={}
+                for key,field in (('industry','industry_evidence'),('geography','location')):
+                    fit=fits.get(key,{'status':'unknown','reason':'A match to the requested '+key+' has not been established.'})
+                    if not isinstance(fit,dict) or fit.get('status') not in ('match','mismatch','unknown'):
+                        raise ValueError('Lead scope fit must be match, mismatch or unknown')
+                    status=fit['status'];citations=[]
+                    if status!='unknown':
+                        if not mission.get(key):raise ValueError('Lead scope fit requires an explicit requested '+key)
+                        citations=refs(fit.get('finding_ids'))
+                        if item[field]['label'] not in ('documented','observed') or any(known[i]['label'] not in ('documented','observed') for i in citations):
+                            raise ValueError('Lead scope fit requires retained factual industry/location evidence')
+                        if set(citations)-set(item[field]['finding_ids']):raise ValueError('Lead scope fit must cite its industry/location evidence')
+                        try:official={r['finding_id'] for r in business_evidence(host,citations,known,sources or [])[0]}
+                        except ValueError:raise ValueError('Lead scope fit requires this business official-site evidence') from None
+                        if set(citations)-official:raise ValueError('Lead scope fit requires this business official-site evidence')
+                    item['scope_fit'][key]={'status':status,'label':'unknown' if status=='unknown' else 'inferred',
+                        'reason':text(fit.get('reason'),'scope fit reason',required=True),'finding_ids':citations}
+                states=[fit['status'] for fit in item['scope_fit'].values()]
+                item['qualification']['scope_status']='outside' if 'mismatch' in states else (
+                    'supported' if states==['match','match'] and item['opportunity_basis']['label']!='unknown' else 'unresolved')
                 item['finding_ids']=reference
             else:
                 source_sections=row.get('sections')
@@ -245,13 +306,28 @@ def validate_output(mission, raw, findings, run_id, at, sources=None):
             item.update(identity_evidence=identity,supporting_evidence=evidence)
             if host in entries:
                 prior=entries[host]
-                if {k:v for k,v in prior.items() if k not in ('finding_ids','identity_evidence','supporting_evidence')} != {k:v for k,v in item.items() if k not in ('finding_ids','identity_evidence','supporting_evidence')}:
-                    raise ValueError('Conflicting duplicate company/lead identities require review')
-                prior['finding_ids']=list(dict.fromkeys(prior['finding_ids']+reference))
+                def meaning(value):
+                    if isinstance(value,dict):return {k:meaning(v) for k,v in value.items() if k not in ('finding_ids','identity_evidence','supporting_evidence')}
+                    if isinstance(value,list):return [meaning(v) for v in value]
+                    return value
+                if meaning(prior)!=meaning(item):raise ValueError('Conflicting duplicate company/lead identities require review')
+                def merge_citations(left,right):
+                    for key,value in right.items():
+                        if key=='finding_ids':left[key]=list(dict.fromkeys(left[key]+value))
+                        elif isinstance(value,dict):merge_citations(left[key],value)
+                merge_citations(prior,item)
                 prior['identity_evidence'] += [x for x in identity if x not in prior['identity_evidence']]
                 prior['supporting_evidence'] += [x for x in evidence if x not in prior['supporting_evidence']]
             else:entries[host]=item
         result[collection]=list(entries.values())
+        if kind=='leads':
+            order={'supported':0,'unresolved':1,'outside':2}
+            result['leads'].sort(key=lambda row:(order[row['qualification']['scope_status']],row['domain']))
+            basis='Scope evidence first, alphabetical within each group; not purchase likelihood or verified business need.'
+            for rank,item in enumerate(result['leads'],1):item['priority']={'rank':rank,'basis':basis}
+            result['lead_summary']={'scope_supported':sum(r['qualification']['scope_status']=='supported' for r in result['leads']),
+                'unresolved':sum(r['qualification']['scope_status']=='unresolved' for r in result['leads']),
+                'outside_scope':sum(r['qualification']['scope_status']=='outside' for r in result['leads']),'ranking_basis':basis}
     elif kind=='market':
         market=raw.get('market',{})
         result['market']={'name':text(market.get('name'),'market name',200,True),'sections':sections(market.get('sections'))}

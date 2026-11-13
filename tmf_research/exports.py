@@ -47,12 +47,18 @@ def designcraft_script(record, synthesis):
 
 def business_lines(value):
     """Use the existing semantic renderers for a readable business briefing."""
-    lines=[]
+    lines=[('body','Discovery limitation: '+reason) for reason in value.get('limitations',[])]
     for item in value.get('companies',value.get('leads',[])):
         lead=value.get('mission_type')=='leads'
         lines += [('heading',('Lead qualification' if lead else 'Company consultation briefing')+' / '+item['name']+' ('+item['domain']+')'),
                   ('body','Candidate public-source intelligence; researched '+item['research_date']+'. Independent verification: not established.')]
         if lead:
+            if item.get('priority'):lines.append(('body','Research priority '+str(item['priority']['rank'])+': '+item['priority']['basis']))
+            if item.get('qualification',{}).get('scope_status'):lines.append(('body','Scope fit: '+item['qualification']['scope_status']))
+            for key,fit in item.get('scope_fit',{}).items():
+                lines.append(('body',key+': '+fit['status']+' / '+fit['reason']+'; findings '+(', '.join(fit['finding_ids']) or 'unknown')))
+            if item.get('opportunity_basis'):
+                basis=item['opportunity_basis'];lines.append(('body','Opportunity basis ['+basis['label'].upper()+']: '+basis['text']+'; findings '+(', '.join(basis['finding_ids']) or 'unknown')))
             lines += [('body','Industry classification: '+item['industry']),('body','[INFERRED OPPORTUNITY] '+item['opportunity']),
                       ('body','[PROPOSED SERVICE] '+item['potential_service']),('body','Estimated fit: '+item['estimated_fit']+'; subjective confidence: '+item['confidence'])]
             for key in ('industry_evidence','location'):

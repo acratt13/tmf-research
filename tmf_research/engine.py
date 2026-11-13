@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 import uuid
 
 from .cli import dump, validate, REA_OPERATIONS
-from .missions import normalize as mission_input, permits, output_instruction, validate_output
+from .missions import normalize as mission_input, permits, output_instruction, validate_output, lead_source_candidates, company_domain
 from .providers import CodexModel, Crawlee, PublicWeb, ProviderError, ScraplingPlugin
 from .processes import bounded_run, retained_diagnostic
 
@@ -344,12 +344,17 @@ class ResearchEngine:
         self.errors.append(message); self.store.update(self.run_id, errors=self.errors)
     def search(self, queries):
         self.event('search', 'Source scout is searching for primary sources; search results are leads only.')
+        lead_discovery=(self.request.get('mission') or {}).get('type')=='leads'
+        preference=('For lead discovery, find distinct public businesses in the requested industry and geographic market. '
+                    'Prefer official business about, location/service-area and product/service pages, including useful public workflow evidence. '
+                    'Interleave businesses so one website does not consume the source budget. Directory results can guide discovery, '
+                    'but retain official-site evidence for identity and scope; do not collect personal profiles or contact lists. ') if lead_discovery else (
+                    'Prefer directly readable official documentation or official Markdown/static equivalents when a previous URL failed. '
+                    'If the reference is an application shell, seek official SDK documentation, schemas or examples, labeling their version/scope limits. ')
         result = self.call('Source scout', 'Use native web search for these bounded queries. Prefer official primary sources. '
                            'Return {"sources":[{"url":"https://...","title":"...","access":"readable|unverified|unavailable"}],"limitations":["..."]}. '
                            'At most 8 relevant sources. Order for breadth: interleave the distinct questions and vendors; '
-                           'do not spend the shortlist on one subtopic. Prefer directly readable official documentation or '
-                           'official Markdown/static equivalents when a previous URL failed. If the reference is an application shell, '
-                           'seek official SDK documentation, schemas or examples, labeling their version/scope limits. '
+                           'do not spend the shortlist on one subtopic. '+preference+
                            'Mark pages you opened but could not read as unavailable; do not displace readable sources with known shells. '
                            'Search snippets are leads, not evidence.',
                            {'queries': queries,'brief':self.request,'unavailable_urls':[s['url'] for s in self.sources if s['state']=='unavailable' and s.get('url')]}, search=True)
@@ -359,6 +364,8 @@ class ResearchEngine:
         usable=[x for x in candidates[:8] if isinstance(x, dict) and isinstance(x.get('url'), str) and x.get('access')!='unavailable']
         return sorted(usable,key=lambda x:x.get('access')!='readable')
     def fetch(self, candidates, limit):
+        if (self.request.get('mission') or {}).get('type')=='leads':
+            candidates=lead_source_candidates(candidates,(s.get(k) for s in self.sources for k in ('url','requested_url','final_url')))
         seen = {s.get('url') for s in self.sources}
         for candidate in candidates:
             self.check()
@@ -394,6 +401,8 @@ class ResearchEngine:
         """PRE-BUILD INGRESS: a parallel Crawlee swarm on the installed remote worker. One bounded job per site (the worker
         runs two at once and queues up to eight), polled to a terminal state, each source read back hash-checked and packed.
         Never a silent fallback to the public-web fetcher: no Crawlee means no pre-build evidence."""
+        lead_discovery=(self.request.get('mission') or {}).get('type')=='leads'
+        if lead_discovery:candidates=lead_source_candidates(candidates,(s.get(k) for s in self.sources for k in ('url','requested_url','final_url')))
         # the operator's config, else CRAWLEE_CONFIG (the variable the bridge itself reads; MC's install sets it on the workbench)
         crawlee = self.crawlee_override or Crawlee((self.config.get('crawlee') or {}).get('connection') or os.environ.get('CRAWLEE_CONFIG'))
         self.acquisition = self.acquisition or {'provider': 'crawlee', 'crawlers': ['crawlee'], 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
@@ -403,17 +412,20 @@ class ResearchEngine:
         for candidate in candidates:
             url = candidate.get('url') if isinstance(candidate, dict) else None
             host = urlsplit(url).hostname if isinstance(url, str) and url.startswith('https://') else None
+            if host and lead_discovery:host=company_domain(host)
             if host and url not in prior_urls and permits(self.request.get('mission'),url) and len(sites.setdefault(host, [])) < 5 and url not in sites[host]: sites[host].append(url)
         topic = (self.request.get('workstream') or {}).get('goal') or self.request['question']
         tags = ['pre-build'] + ([self.request['workstream']['id']] if self.request.get('workstream', {}).get('id') else [])
         try:
             remaining=max(0,limit-len([s for s in self.sources if s.get('url')]))
-            for host, urls in list(sites.items())[:8]:
+            selected=list(sites.items())[:8]
+            for index,(host, urls) in enumerate(selected):
                 self.check()
                 if not remaining:break
-                pages=min(5,remaining);remaining-=pages
+                pages=min(5,max(1,remaining//(len(selected)-index))) if lead_discovery else min(5,remaining)
+                remaining-=pages
                 try:
-                    job = crawlee.call('crawlee_start', {'urls': urls[:pages], 'allowed_domains': [host], 'max_pages': pages, 'max_depth': 1,
+                    job = crawlee.call('crawlee_start', {'urls': urls[:pages], 'allowed_domains': list(dict.fromkeys([host]+([urlsplit(u).hostname for u in urls[:pages]] if lead_discovery else []))), 'max_pages': pages, 'max_depth': 1,
                                                          'topic': topic[:200], 'tags': [t[:60] for t in tags]})
                     self.acquisition['jobIds'].append(job['id']);round_jobs.append(job['id']); job_site[job['id']] = host
                     self.store.save(self.run_id,'acquisition.json',self.acquisition)
@@ -949,16 +961,17 @@ class ResearchEngine:
                 'Check every company identity, factual claim, inference, recommendation and specialty instruction against the supplied findings. '
                 'Return {"supported":true,"concerns":["..."]}. Refuse unsupported identity associations, invented company problems, '
                 'unfounded professional procedures, missing jurisdiction/date caveats, inferred private thoughts, claims of person identity/endorsement, '
-                'or promoted uncertain evidence. For leads, requested geography/industry is not evidence of a company location or qualification; unsupported matches stay unknown. A citation resolving is not entailment. Confidence is not verification. '
+                'or promoted uncertain evidence. For leads, inspect each scope_fit reason and cited industry/location evidence for this specific company, including the actual requested geographic area. Broad region overlap does not prove a city match. Proposed opportunities must explain relevance from cited business facts without invented needs. Requested geography/industry is not evidence of a company location or qualification; unsupported matches stay unknown. A citation resolving is not entailment. Confidence is not verification. '
                 'Specialties are draft expertise only, never permissions or deployed agents. This is model review, not independent certification.',
                 {'mission':mission,'output':output,'reviewed_findings':accepted,
                  **({'source_register':record['sources']} if mission['type'] in ('company','startup','leads') else {})})
             self.store.save(self.run_id,'intelligence-review.json',review)
             if review.get('supported') is not True:raise ProviderError('Mission output evidence review withheld the proposed output')
             output['verification']='model-reviewed'
+            if mission['type']=='leads' and not output['leads']:self.error('No source-backed lead candidates were retained; inspect discovery limitations')
             def unknowns(value):
                 if isinstance(value,dict):
-                    if value.get('label')=='unknown':self.error('Mission section remains unknown: '+str(value.get('heading') or value.get('text'))[:160])
+                    if value.get('label')=='unknown':self.error('Mission section remains unknown: '+str(value.get('heading') or value.get('text') or value.get('reason'))[:160])
                     for child in value.values():unknowns(child)
                 elif isinstance(value,list):
                     for child in value:unknowns(child)
