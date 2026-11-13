@@ -150,6 +150,8 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
                 retain('report.pdf')
             elif fmt=='builder':
                 bundle={'report':record,'analysis':synthesis,'kind':'Research blueprint; not implementation proof',**({'intelligence':intelligence_value} if intelligence_value else {})}
+                execution=directory/'publication-execution.json'
+                if execution.exists():bundle['execution_evidence']=json.loads(execution.read_text())
                 for key in ('plan','claims','council'):
                     path=directory/(key+'.json')
                     if path.exists():bundle[key]=json.loads(path.read_text())

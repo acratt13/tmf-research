@@ -235,6 +235,19 @@ def retain_role_value(entry, key, value):
     entry[key + '_redacted'] = json.dumps(saved, ensure_ascii=False) != raw
 
 
+def execution_observation(run_id, sources, calls, usage, limits, rounds):
+    """Controller/provider observations, separate from model-authored business facts."""
+    measured=[row['web_search_calls'] for row in usage if type(row.get('web_search_calls')) is int and row['web_search_calls']>=0]
+    return {'schema':'tmf-research-execution-evidence/1','run_id':run_id,'observed_at':timestamp(),
+        'sources':[{k:source[k] for k in ('id','url','final_url','state','retrieved_at','artifact_sha256','canon') if k in source} for source in sources],
+        'model_calls_attempted_so_far':len(calls),'model_call_limit':limits.get('calls'),
+        'analysis_concurrency':limits.get('concurrency'),'follow_up_rounds_so_far':rounds,
+        'discovery':{'search_enabled_calls_returned':sum(row.get('search_enabled') is True and row.get('status')=='returned' for row in calls),
+            'native_web_search_calls_observed':sum(measured) if measured else None,
+            'provider_usage_complete':len(usage)==len(calls) and len(measured)==len(usage)},
+        'scope':'Observed before this stage; not final execution totals or independent business verification. Missing provider accounting stays unknown.'}
+
+
 class ResearchEngine:
     def __init__(self, store, config=None, model=None, web=None, crawlee=None):
         from .canon import operator_config
@@ -245,6 +258,21 @@ class ResearchEngine:
         self.gaps = []; self.reviewed = {}; self.serial = 0; self.round = 0
         self.role_calls=[];self.role_lock=threading.Lock()
         self.call_limit=None;self.concurrency=3;self.request={};self.execution=None;self.replaying=False;self.provider_usage=[];self.provider_session=uuid.uuid4().hex
+    def execution_context(self, stage):
+        # Freeze per-stage input so recovery can replay the exact returned model call.
+        path=self.store.directory(self.run_id)/(stage+'-execution.json')
+        if path.exists():return json.loads(path.read_text())
+        usage=self.provider_usage+[{'session':self.provider_session,**row} for row in getattr(self.model,'usage',[])]
+        limits={**getattr(self,'execution_limits',{}),'calls':self.call_limit,'concurrency':self.concurrency}
+        receipt=execution_observation(self.run_id,self.sources,self.role_calls,usage,limits,self.round)
+        if getattr(self,'origin_execution',None):
+            receipt['origin']=self.origin_execution
+            receipt['collection_mode']='Retained-evidence revision; no new source acquisition'
+        self.store.save(self.run_id,path.name,receipt)
+        return receipt
+    def evidence_context(self, stage='publication'):
+        if self.request.get('mission',{}).get('type') not in ('company','startup','leads'):return {}
+        return {'execution_evidence':getattr(self,'publication_execution',None) or self.execution_context(stage)}
     SNAPSHOT_FIELDS = ('errors','sources','packets','findings','requirements','gaps','reviewed','serial','round','acquisition','coverage_result')
     def checkpoint(self, key, action):
         """One durable execution record in the existing run directory, not a scheduler."""
@@ -295,6 +323,7 @@ class ResearchEngine:
         if mission and mission['type'] in ('company','startup','leads'):
             # Planning and coverage must see the same output contract as the writer.
             data={**data,'mission_output_contract':output_instruction(mission)}
+            task+=' Controller execution_evidence and source retrieval timestamps are operational provenance, not business findings. Reconcile role-local notes against these observed receipts: a specialist not searching does not mean the mission did not search. Do not invent missing metadata or treat an unmet future stage as a completed result.'
         if isinstance(data,dict) and isinstance(data.get('evidence'),list):
             # Keep later rounds bounded as the source ledger grows.
             packets=data['evidence'];per_source=min(16000,100000//max(1,len(packets)))
@@ -750,7 +779,7 @@ class ResearchEngine:
             'Customer interviews and private runtime tests cannot be resolved by web search; keep them explicit, '
             'but pursue answerable official documentation questions. Use failed URLs to seek readable official alternatives. '
             'Coverage is a model assessment, not factual certification. Do not mark answered without reviewed finding IDs.',
-            {'brief':self.request,'success_criteria':plan['success_criteria'],'findings':self.accepted(),
+            {'brief':self.request,'success_criteria':plan['success_criteria'],'findings':self.accepted(),**self.evidence_context('coverage-'+str(self.round)),
              'council':json.loads(council.read_text()) if council.exists() else None,
              'objections':queries,'sources':self.sources,'requirements':self.requirements,'accepted_analysis':analysis})
         rows={}
@@ -817,7 +846,7 @@ class ResearchEngine:
             if mission['type'] not in ('general','technology','council'):limits['calls']+=2
             limits.update(mission['budgets'])
             self.concurrency=limits.get('concurrency',3)
-        self.call_limit=limits['calls']
+        self.call_limit=limits['calls'];self.execution_limits=limits
         try:
             if resume:
                 self.execution=self.resumable(self.store,run_id);self.replaying=True
@@ -911,6 +940,17 @@ class ResearchEngine:
             self.sources=record['sources'];self.findings=bundle['claims'];self.requirements=record['requirements']
             self.gaps=[g for g in record.get('research_log',record['unknowns']) if not g.startswith('Coverage ')]
             self.coverage_result=bundle['analysis'].get('coverage',{'criteria':[]})
+            self.origin_execution=bundle.get('execution_evidence')
+            if not isinstance(self.origin_execution,dict):
+                try:
+                    parent_calls=json.loads((parent/'role-calls.json').read_text())
+                    parent_usage=json.loads((parent/'usage.json').read_text())
+                    saved_execution=json.loads((parent/'execution.json').read_text()) if (parent/'execution.json').exists() else {}
+                    self.origin_execution=execution_observation(parent_id,self.sources,parent_calls,parent_usage['roles'],parent_usage['limits'],saved_execution.get('snapshot',{}).get('round'))
+                    self.origin_execution['receipt_basis']='Existing parent execution/source ledgers; legacy builder bundle did not embed this receipt'
+                except (OSError,ValueError,KeyError,TypeError):
+                    self.origin_execution={'run_id':parent_id,'status':'unavailable','scope':'Original execution accounting unavailable; do not infer discovery or spend'}
+
             plan=bundle['plan'];plan.setdefault('success_criteria',[record['question']])
             for key in ('plan','claims','council'):
                 if key in bundle:self.store.save(run_id,key+'.json',bundle[key])
@@ -927,6 +967,7 @@ class ResearchEngine:
                 'scope':'Retained-evidence synthesis revision; original retrieval times preserved; no source acquisition or automatic replay'})
             self.errors=['Retained source '+s['id']+' is unavailable' for s in self.sources if s['state']=='unavailable']
             limits={'sources':0,'rounds':0,'calls':4+(2 if self.request.get('mission',{}).get('type') not in (None,'general','technology','council') else 0)}
+            self.call_limit=limits['calls'];self.execution_limits=limits;self.concurrency=self.request.get('mission',{}).get('budgets',{}).get('concurrency',self.concurrency)
             self.model=self.model_override or CodexModel(self.config.get('codex','codex'),max_calls=limits['calls'])
             self.store.update(run_id,status='running',parent_id=parent_id)
             self.publish(plan,self.accepted(),limits,[])
@@ -951,7 +992,7 @@ class ResearchEngine:
         try:
             self.event('intelligence','Organizing mission outputs against the reviewed evidence.')
             raw=self.call('Mission intelligence analyst',output_instruction(mission),
-                          {'mission':mission,'findings':accepted,'unknowns':record['unknowns'],
+                          {'mission':mission,'findings':accepted,'unknowns':record['unknowns'],**self.evidence_context(),
                            **({'source_register':record['sources']} if mission['type'] in ('company','startup','leads') else {})})
             self.store.save(self.run_id,'intelligence-draft.json',raw)
             output=validate_output(mission,raw,accepted,self.run_id,timestamp(),sources=record['sources'])
@@ -962,8 +1003,9 @@ class ResearchEngine:
                 'Return {"supported":true,"concerns":["..."]}. Refuse unsupported identity associations, invented company problems, '
                 'unfounded professional procedures, missing jurisdiction/date caveats, inferred private thoughts, claims of person identity/endorsement, '
                 'or promoted uncertain evidence. For leads, inspect each scope_fit reason and cited industry/location evidence for this specific company, including the actual requested geographic area. Broad region overlap does not prove a city match. Proposed opportunities must explain relevance from cited business facts without invented needs. Requested geography/industry is not evidence of a company location or qualification; unsupported matches stay unknown. A citation resolving is not entailment. Confidence is not verification. '
-                'Specialties are draft expertise only, never permissions or deployed agents. This is model review, not independent certification.',
-                {'mission':mission,'output':output,'reviewed_findings':accepted,
+                'canon_continuity is scoped Canon-adapter provenance, not a business claim requiring finding citations; check it against the supplied metadata rather than inventing absent history. Specialties are draft expertise only, never permissions or deployed agents. This is model review, not independent certification.',
+                {'mission':mission,'output':output,'reviewed_findings':accepted,**self.evidence_context(),
+                 'canon_continuity':{row['domain']:row.get('continuity') for row in output.get('companies',output.get('leads',[]))},
                  **({'source_register':record['sources']} if mission['type'] in ('company','startup','leads') else {})})
             self.store.save(self.run_id,'intelligence-review.json',review)
             if review.get('supported') is not True:raise ProviderError('Mission output evidence review withheld the proposed output')
@@ -983,6 +1025,7 @@ class ResearchEngine:
             self.error('Mission output withheld: '+str(exc)[:200])
 
     def publish(self, plan, accepted, limits, queries):
+        if self.request.get('mission',{}).get('type') in ('company','startup','leads'):self.publication_execution=self.execution_context('publication')
         run_id=self.run_id
         self.event('synthesize','Writer is assembling the blueprint from reviewed findings and explicit unknowns.')
         council_file=self.store.directory(run_id)/'council.json'
@@ -1015,7 +1058,7 @@ class ResearchEngine:
                             'Return at most six consolidated unknowns that materially change a decision; for each state the affected decision and '
                             'the smallest check that resolves it. Reconcile repeated or superseded research questions. The complete research log is '
                             'retained separately, so do not dump it into the main report. Preserve consequential dissent in the analysis.',
-                            {'brief':self.request,'findings':accepted,'requirements':self.requirements,
+                            {'brief':self.request,'findings':accepted,'requirements':self.requirements,**self.evidence_context(),
                              'unknowns':self.gaps[-35:],'success_criteria':plan['success_criteria'],
                              'coverage':self.coverage_result,'revision_feedback':getattr(self,'feedback',''),
                              'council':json.loads(council_file.read_text()) if council_file.exists() else None})
@@ -1035,7 +1078,7 @@ class ResearchEngine:
                                'unsupported factual assertions, concealed gaps, or suppressed council dissent. '
                                'Explicit recommendations and proposed requirements need not be proven facts. '
                                'This is model review, not independent certification.',
-                               {'synthesis':synthesis,'reviewed_findings':accepted,
+                               {'synthesis':synthesis,'reviewed_findings':accepted,**self.evidence_context(),
                                 'material_gaps':self.gaps,'scope_limits':plan.get('scope_limits',[]),
                                 'council':json.loads(council_file.read_text()) if council_file.exists() else None})
         self.store.save(run_id,'synthesis-review.json',final_review)
