@@ -180,6 +180,10 @@ class BusinessTests(unittest.TestCase):
             data=next(data for name,data in model.inputs if name==role)
             self.assertEqual(data['source_register'][0]['url'],'https://example.com/docs')
             self.assertTrue(data['source_register'][0]['artifact_sha256'])
+        for role in ('Research lead','Research coverage lead','Mission intelligence analyst','Mission output evidence reviewer'):
+            data=next(data for name,data in model.inputs if name==role)
+            self.assertIn('consulting_questions',data['mission_output_contract'])
+            self.assertIn('unknowns',data['mission_output_contract'])
 
     def test_company_domain_normalization_is_idempotent_and_rejects_invalid_dns(self):
         from tmf_research.missions import company_domain

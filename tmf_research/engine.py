@@ -291,6 +291,10 @@ class ResearchEngine:
             if self.cancelled.wait(.1):raise InterruptedError('Research cancelled')
     def call(self, role, task, data, search=False):
         self.check()
+        mission=self.request.get('mission')
+        if mission and mission['type'] in ('company','startup','leads'):
+            # Planning and coverage must see the same output contract as the writer.
+            data={**data,'mission_output_contract':output_instruction(mission)}
         if isinstance(data,dict) and isinstance(data.get('evidence'),list):
             # Keep later rounds bounded as the source ledger grows.
             packets=data['evidence'];per_source=min(16000,100000//max(1,len(packets)))
