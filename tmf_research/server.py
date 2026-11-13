@@ -11,11 +11,12 @@ import signal
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
+from .canon import publish_candidates, publication_status, recover_publications
 from .engine import ResearchEngine, RunStore, RequestConflict, brief, LENSES, FORMATS, PRESETS, COUNCIL_SPECIALISTS, DEFAULT_COUNCIL
 
 
 def serve(root, config=None, port=8765):
-    store=RunStore(root);store.recover_interrupted();config=config or {}
+    store=RunStore(root);store.recover_interrupted();recover_publications(store);config=config or {}
     token=secrets.token_urlsafe(32)
     active={};lock=threading.Lock()
     web=Path(__file__).parent/'web'
@@ -56,6 +57,7 @@ def serve(root, config=None, port=8765):
                     pre_build=directory/'pre-build.json'   # mc-pre-build/1, only for a pre-build run
                     self.reply(200,{'report':report,'timed_out_roles':timed_out,'council':json.loads(council.read_text()) if council.exists() else None,
                                     'analysis':json.loads(published.read_text()) if published.exists() else None,
+                                    'canon':publication_status(store,run_id,config),
                                     **({'pre_build':json.loads(pre_build.read_text())} if pre_build.exists() else {})});return
                 if path.startswith('/api/runs/'):
                     run_id=path.rsplit('/',1)[1]
@@ -113,6 +115,27 @@ def serve(root, config=None, port=8765):
                             with lock:active.pop(run_id,None)
                     threading.Thread(target=revise,daemon=True).start()
                     return self.reply(202,{'id':run_id,'parent_id':parent_id})
+                if self.path=='/api/canon/publish':
+                    run_id=payload.get('id');directory=store.directory(run_id)
+                    with lock:
+                        if active:return self.reply(409,{'error':'Wait for the active job before publishing'})
+                        if store.read(run_id)['status'] not in ('completed','partial') or not (directory/'report.json').exists():
+                            return self.reply(409,{'error':'No finished retained report is available'})
+                        job=SimpleNamespace(cancelled=threading.Event());active[run_id]=job
+                        store.update(run_id,canon_activity='publishing')
+                    def publish():
+                        try:
+                            def check():
+                                if job.cancelled.is_set():raise InterruptedError()
+                            publish_candidates(store,run_id,config,check)
+                        except Exception:
+                            store.save(run_id,'canon-publication.json',{'status':'partial','reason':'Publication stopped; retry reuses keyed identities'})
+                        finally:
+                            with lock:
+                                store.update(run_id,canon_activity=None)
+                                active.pop(run_id,None)
+                    threading.Thread(target=publish,daemon=True).start()
+                    return self.reply(202,{'id':run_id,'status':'publishing-candidates'})
                 if self.path=='/api/export':
                     run_id=payload.get('id');directory=store.directory(run_id)
                     formats=payload.get('formats',[])
@@ -168,6 +191,9 @@ def serve(root, config=None, port=8765):
                         engine=active.get(payload.get('id'))
                         if not engine:return self.reply(409,{'error':'Run is not active'})
                         with store.lock:
+                            if store.read(payload['id']).get('canon_activity')=='publishing':
+                                engine.cancelled.set()
+                                return self.reply(202,{'status':'cancelling-publication'})
                             if store.read(payload['id'])['status'] not in ('queued','running','reviewing','cancelling'):
                                 return self.reply(409,{'error':'Run already finished'})
                             engine.cancelled.set();store.update(payload['id'],status='cancelling')

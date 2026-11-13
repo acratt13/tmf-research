@@ -55,6 +55,41 @@ The packaged `tmf_research/mc/mcp-servers.json`, `mc/allow.json` and `mc/tool-an
 
 Each run's private `role-calls.json` retains effective role inputs (after passage selection) before dispatch and raw returned values before role-specific normalization. Input/output SHA256 fields identify the original serialized values; `*_redacted:true` means the existing credential filter changed the saved snapshot, so it is not an exact replay. These artifacts can contain selected source/document text: keep them private. Timeout state and report consumers remain unchanged; no automatic replay occurs.
 
+### Canon candidates (bounded expansion slice)
+
+The workbench can save a finished report with **Save candidates to Canon**. This is an explicit action, not automatic knowledge promotion. The existing `result` operation includes its publication receipt; `submit`, `status`, `result` and `cancel` keep their current contracts. Publication runs asynchronously under the existing workbench owner and can be cancelled. Research status stays separate from publication status.
+
+Operator configuration (passed to `serve --config`) adds:
+
+```json
+{"canon":{"url":"http://127.0.0.1:4320","identity_scope":"workspace-stable-id","token_env":"MC_CANON_TOKEN"}}
+```
+
+The named environment variable must be supplied privately by the existing MC authorization owner. Its value never belongs in configuration or run artifacts. Source/model inputs cannot select a connection, identity scope or credential. No credential discovery, new transport, dependency or database is added. Unconfigured authorization, denied writes and unavailable Canon remain visible. The MC installation still needs its normal authorized connection provisioning; this source change does not install or enable a live binding.
+
+The adapter uses Canon's existing `POST /api/canon/sections/knowledge/entries` keyed create and compare-and-set edit contracts. The Knowledge section must already exist. Entry `fields.status=draft` and `fields.reviewStatus=candidate` mark every output; section entries do not have a top-level draft status in this API. No entry becomes an approved operating rule.
+
+Stable namespace + run ID identifies a mission. Conservative URL normalization (host case, default port, empty root path and fragments only) or an artifact hash identifies a source. A source identity is reused across missions within that namespace; immutable observation snapshots retain retrieval date, content hash, scope and limitations. Findings retain evidence labels, caveats, exact source revisions and any matching retained model reviews. Typed links use Canon's registered `source`, `supported-by` and `related` kinds. A report snapshot preserves the original report and output references; the mission head advances using Canon revisions. Retrying after a lost response reuses remote keyed identities even if its local receipt was lost. Reviewed or externally edited candidates are not overwritten.
+
+`published-candidate` means the candidate writes were read in Canon's responses, not that the findings are independently verified. `partial`, `unavailable`, `cancelled` and `interrupted` expose incomplete publication. After a process restart, no automatic writes or research replay occurs; an explicit retry resolves existing identities. Local receipts are diagnostic artifacts in the existing run directory, not another knowledge store.
+
+Current limits: identity resolution reuses this adapter's stable source keys; it does not merge arbitrary pre-existing company/person/source records or guess URL aliases. Cross-client namespace and connection provisioning belong to MC. Draft review/promotion, role generation, recurring missions, graph Canvas views and distributed workers remain outside this slice. Output references identify the existing run and export name, and require the original Research service/storage to resolve; they are not uploaded copies.
+
+MC Canvas handoff: the existing MC overlay already declares `mcpService: workbench` and `frame: view`; it shares one service with the tools and has no card stop action. Research uses its existing UI inside that dynamic Canvas application. Agents/builders drive jobs through the four lifecycle tools and show the application through existing `open_app` / `put_on_screen`. The Research UI now accepts a validated `?run=<saved-run-id>` to open the exact submitted job without starting another one. The MC-owned app card must allow `query: ["run"]` so `open_app {name: "tmf-research", query: {run: "<id>"}}` reaches that view; no replacement renderer is needed. The inspected baseline card does not yet allow this query. This Research-only change does not alter the MC overlay. The publication action is currently operator/UI-driven; a governed agent publication command is not yet exposed. Popup close/reopen, pin persistence, chat-switch placement and agent/builder end-to-end acceptance require the MC owner’s installed test, and are not established by the browser proof below.
+
+Actual module inventory for Super MC Machine Phase 0:
+
+| Existing owner | Current contract / coverage | Expansion boundary |
+| --- | --- | --- |
+| `engine.py` / `RunStore` | Durable runs, stable request IDs, interrupted recovery; lifecycle and engine tests | Reused, no replacement scheduler |
+| `providers.py`, crawler plugins | Source search/fetch, Crawlee jobs, Scrapling fallback and provenance; provider/pre-build/plugin tests | No crawler changes |
+| `engine.py` review / Council | Claim admission, reviewer decisions, synthesis withholding, Council perspectives; evidence/Council tests | Retained labels, not independent certification |
+| `cli.py`, `exports.py` | Validated reports, retained evidence, presentation exports; report/export tests | Original result remains available |
+| `server.py`, `client.py`, `mc/*.json`, `web/` | Workbench job owner, four short CLI operations, paged hashes, UI; server/lifecycle/shared-shim tests | Explicit candidate publish action + receipt |
+| `canon.py` | Existing Canon keyed section API, typed links and revisions; candidate/native-contract tests | New narrow adapter; no authority store |
+
+Before this slice there was a Council role named Canon keeper, but no Canon write adapter in the Research source. Live MC connection health is an installation concern and was not re-probed here; the reported installed v0.4 workbench baseline is distinct from these source changes. Business mission presets, role/Hub generation, reusable Council configurations, ontology extraction and distributed execution remain future integration work.
+
 ### Existing evidence/report commands
 
 Python 3.11+. Core commands have no third-party Python runtime dependencies.

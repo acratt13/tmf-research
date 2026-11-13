@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import select
 import subprocess
 import tempfile
 import tomllib
@@ -36,10 +37,28 @@ else:
             replacements = {'${plugin:.mc-cli-shim/cli-mcp-shim.mjs}': os.environ['MC_CLI_SHIM'],
                             '${data}/tmf-research-allow.json': str(allow), 'tmf-research': str(command)}
             argv = [server['command']] + [replacements.get(arg, arg) for arg in server['args']]
-            result = subprocess.run(argv,
-                                    input=''.join(json.dumps(r) + '\n' for r in requests), capture_output=True,
-                                    text=True, timeout=10, check=True, env=env, cwd=folder)
-            return [json.loads(line) for line in result.stdout.splitlines()]
+            # MCP is an ongoing stdio session. EOF tells the real shim to stop,
+            # so keep stdin open until the asynchronous tool response arrives.
+            process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, text=True, env=env, cwd=folder)
+            replies = []
+            try:
+                for request in requests:
+                    process.stdin.write(json.dumps(request) + '\n'); process.stdin.flush()
+                    ready, _, _ = select.select([process.stdout], [], [], 10)
+                    self.assertTrue(ready, 'Shared shim did not answer within the fixture timeout')
+                    line = process.stdout.readline()
+                    self.assertTrue(line, 'Shared shim closed before its response')
+                    replies.append(json.loads(line))
+            finally:
+                process.stdin.close()
+                try: process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill(); process.wait(timeout=3)
+                errors = process.stderr.read()
+                process.stdout.close(); process.stderr.close()
+            self.assertEqual(process.returncode, 0, errors)
+            return replies
 
     def test_annotations_match_the_real_console_tool_names(self):
         root = Path(__file__).resolve().parents[1]

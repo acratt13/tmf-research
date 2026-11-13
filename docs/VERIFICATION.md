@@ -15,3 +15,23 @@ This original foundation check did not test autonomous research roles, live sear
 Dependency risk is not established by successfully importing or using ReportLab. See its upstream/package advisories and your own dependency policy for a deployment decision.
 
 Read-only dependency-reviewer package-risk lookup for ReportLab 4.4.9 could not run: the installed Endor CLI lacks the `agent` command. Dependency risk posture remains UNKNOWN; no package approval or security clearance is claimed. No package installation or Endor mutation was performed.
+
+
+## Canon candidate bridge — 2026-11-13
+
+Bounded source expansion on the existing `plugins/scrapling` branch, based on `ddb6f5c`. The authoritative expansion spec is Canon `cn-15d6a304-49db-42e9-8146-01d1ae576781`, revision 1, Phase 0 inventory and the first Phase 2 publication slice. The module/contract inventory and operator connection handoff are in README.
+
+- Full Research suite: **125 tests passed, none skipped**, with `MC_CLI_SHIM` and `CANON_TEST_DIST` supplied; JavaScript syntax and `git diff --check` passed. The existing MC dynamic app show/put-away suite also passed 4/4 against its compiled code with scratch storage.
+- Candidate tests execute actual local HTTP publication with synthetic source/review fixtures. They cover stable mission/source identities, original evidence labels, citation and exact source-revision retention, report snapshots, compare-and-set conflicts, repeated publication without new rows, missing authorization, partial connection failures, cancellation, restart and retry after lost receipts. The actual workbench process and original paged `result` CLI reconstruct the publication reference without starting a model or another research run.
+- Optional native-contract acceptance uses the existing compiled MC Canon section writer and Knowledge declaration against temporary SQLite storage. The real writer accepted every candidate; repeat publication added zero rows. Changing the report kept the mission ID, advanced its revision to 2 and preserved the original report snapshot, adding only the new snapshot and mission revision. No live Canon knowledge fixture was written.
+- Browser execution opened a retained synthetic partial result, clicked **Save candidates to Canon**, and read the resulting candidate publication state and mission revision 1. The research state remained partial. No JavaScript runtime error was observed; the sole console error was the existing missing favicon (404).
+- The previously skipped shared-wrapper checks now run against the real external MC shim. The budget test's failure was caused by its fixture closing stdin before an asynchronous tool reply. Keeping the MCP session open through the reply fixes that test without changing the shared shim, the complete serialized-result assertion or the 2400-byte budget.
+- No paid model calls, crawls, outreach, deployment, installation, push or live Research/MC restart was performed. Live Link & Sync provisioning and installed Canvas acceptance for this new adapter remain untested.
+
+Reproduce the optional integration checks with the owning MC checkout's existing compiled backend and shared shim (paths supplied by the operator, never bundled into Research):
+
+```sh
+MC_CLI_SHIM=<shared-cli-shim.mjs> CANON_TEST_DIST=<backend-dist-src> python3 -m unittest discover -s tests -v
+```
+
+- Canvas handoff added after source inspection: the MC overlay uses its declared workbench service and native-view app card; both actor classes already share the generic `open_app` tool and dynamic put-away path. The baseline Research card does not whitelist a saved-run navigation query. Research now validates `?run=<id>` and opens that saved run; browser proof selected the requested run despite a different cached run ID. MC must add `query: ["run"]` to its existing card, replay the new Research commit through normal overlay ownership, and provision the authorized Canon connection. No Builder MC files were edited. Full installed dynamic-popup close/reopen and chat-switch/pin acceptance remain pending.
