@@ -201,6 +201,9 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
                 retain('workflow.json');retain('workflow.html')
         except (OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError,RuntimeError) as exc:
             errors.append(f'Requested {fmt} export unavailable ({type(exc).__name__}); no successful export claimed')
+    intelligence=directory/'intelligence.json'
+    if intelligence.exists():
+        (out/'intelligence.json').write_bytes(intelligence.read_bytes());retain('intelligence.json')
     (out/'export-receipt.json').write_text(dump({'record_sha256':hashlib.sha256(dump(record).encode()).hexdigest(),
                                                'artifacts':receipts,'errors':errors,
                                                'limits':'Local adapter results; independent visual and format-interoperability review required.'}))

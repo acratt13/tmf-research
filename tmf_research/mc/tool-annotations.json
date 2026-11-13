@@ -1,8 +1,31 @@
 {
   "toolAnnotations": {
-    "mcp.tmf-research/tmf-research_submit": {"readOnlyHint": false},
-    "mcp.tmf-research/tmf-research_status": {"readOnlyHint": true},
-    "mcp.tmf-research/tmf-research_result": {"readOnlyHint": true},
-    "mcp.tmf-research/tmf-research_cancel": {"readOnlyHint": false}
+    "mcp.tmf-research/tmf-research_submit": {
+      "readOnlyHint": false
+    },
+    "mcp.tmf-research/tmf-research_status": {
+      "readOnlyHint": true
+    },
+    "mcp.tmf-research/tmf-research_result": {
+      "readOnlyHint": true
+    },
+    "mcp.tmf-research/tmf-research_cancel": {
+      "readOnlyHint": false
+    },
+    "mcp.tmf-research/tmf-research_publish": {
+      "readOnlyHint": false
+    },
+    "mcp.tmf-research/tmf-research_missions": {
+      "readOnlyHint": true
+    },
+    "mcp.tmf-research/tmf-research_pause": {
+      "readOnlyHint": false
+    },
+    "mcp.tmf-research/tmf-research_resume": {
+      "readOnlyHint": false
+    },
+    "mcp.tmf-research/tmf-research_knowledge": {
+      "readOnlyHint": true
+    }
   }
 }

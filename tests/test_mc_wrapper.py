@@ -21,7 +21,7 @@ class SharedWrapperTests(unittest.TestCase):
             command.write_text('''#!/usr/bin/env python3
 import sys
 if '--help' in sys.argv:
-    print('Commands:\\n  submit  Submit a brief\\n  status  Read state\\n  result  Read results\\n  cancel  Cancel work\\n  serve   Start a server\\n  run     Run synchronously')
+    print('Commands:\\n  submit  Submit a brief\\n  status  Read state\\n  result  Read results\\n  cancel  Cancel work\\n  publish  Save candidates\\n  missions  Mission catalog\\n  pause  Pause stages\\n  resume  Resume stages\\n  knowledge  Read knowledge\\n  serve   Start a server\\n  run     Run synchronously')
 else:
     from tmf_research.client import page
     from tmf_research.cli import dump
@@ -70,9 +70,9 @@ else:
         reply, = self.exchange([{'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}])
         annotations = json.loads((root / 'tmf_research/mc/tool-annotations.json').read_text())['toolAnnotations']
         names = [t['name'] for t in reply['result']['tools']]
-        self.assertEqual(names, ['tmf-research_' + op for op in ('submit', 'status', 'result', 'cancel')])
+        self.assertEqual(names, ['tmf-research_' + op for op in ('submit', 'status', 'result', 'cancel', 'publish', 'missions', 'pause', 'resume', 'knowledge')])
         self.assertEqual({name: annotations.get('mcp.tmf-research/' + name, {}).get('readOnlyHint') for name in names},
-                         {name: name.endswith(('_status', '_result')) for name in names})
+                         {name: name.endswith(('_status', '_result', '_missions', '_knowledge')) for name in names})
 
     def test_budget_uses_the_real_complete_mcp_result(self):
         reply, = self.exchange([{'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',

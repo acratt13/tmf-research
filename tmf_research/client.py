@@ -98,13 +98,23 @@ def execute(args):
         if not isinstance(request, dict): raise ValueError('Research brief must be an object')
         if 'request_id' in request: raise ValueError('Supply the stable request id as --request-id')
         return workbench.request('/api/runs', {**request, 'request_id': args.request_id})
+    if args.command=='knowledge':
+        if not re.fullmatch(r'cn-[a-f0-9-]{36}',args.id) or (args.revision is not None and args.revision<1):raise ValueError('Use a Canon identity and positive revision')
+        suffix=f'?revision={args.revision}' if args.revision else ''
+        return page(workbench.request('/api/knowledge/'+args.id+suffix),'retained-knowledge',args.cursor,args.sha256)
+    if args.command == 'missions':
+        return page(workbench.request('/api/missions'), 'available', args.cursor, args.sha256)
+    if args.command == 'publish':
+        return workbench.request('/api/canon/publish', {'id': run_id(args.id)})
+    if args.command in ('pause','resume'):
+        return workbench.request('/api/'+args.command, {'id':run_id(args.id)})
     if args.command == 'cancel':
         return workbench.request('/api/cancel', {'id': run_id(args.id)})
     if args.command == 'status':
         value = workbench.request('/api/runs/' + run_id(args.id)) if args.id else workbench.request('/api/runs')
         return page(value, value['status'] if args.id else 'available', args.cursor, args.sha256)
     state = workbench.request('/api/runs/' + run_id(args.id))
-    result = {'state': state, 'artifacts': [{'name': name, 'url': f'{workbench.base}/outputs/{args.id}/{name}'} for name in state.get('outputs', [])]}
+    result = {'view': {'app': 'tmf-research', 'query': {'run': args.id}}, 'state': state, 'artifacts': [{'name': name, 'url': f'{workbench.base}/outputs/{args.id}/{name}'} for name in state.get('outputs', [])]}
     if state.get('timed_out_roles'): result['timed_out_roles'] = state['timed_out_roles']
     if state['status'] in ('completed', 'partial'):
         try: result['result'] = workbench.request('/api/result/' + args.id)

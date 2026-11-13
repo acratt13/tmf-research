@@ -35,3 +35,18 @@ MC_CLI_SHIM=<shared-cli-shim.mjs> CANON_TEST_DIST=<backend-dist-src> python3 -m 
 ```
 
 - Canvas handoff added after source inspection: the MC overlay uses its declared workbench service and native-view app card; both actor classes already share the generic `open_app` tool and dynamic put-away path. The baseline Research card does not whitelist a saved-run navigation query. Research now validates `?run=<id>` and opens that saved run; browser proof selected the requested run despite a different cached run ID. MC must add `query: ["run"]` to its existing card, replay the new Research commit through normal overlay ownership, and provision the authorized Canon connection. No Builder MC files were edited. Full installed dynamic-popup close/reopen and chat-switch/pin acceptance remain pending.
+
+
+## Structured missions and actor controls — source expansion
+
+The existing engine now accepts `tmf-research-mission/1` configurations and emits validated `tmf-research-intelligence/1` outputs. Company/startup briefing sections, inferred lead opportunities, market sections, profession knowledge, labeled person research and custom Council configurations all retain reviewed finding references. Actual model roles/collection/exports stay owned by the existing engine. Draft expertise is not a deployed Role or an agent.
+
+Synthetic engine and HTTP tests cover each mission type, separate mission-output review and withholding, domain scope before HTTPS redirect contact, scoped Scrapling collection without uncontrolled browser redirects, original evidence labels, unknown/partial output, company-domain deduplication/conflicts, model/source budgets, custom responsibilities, pause/resume of one active controller, owned crawler cancellation, and refinement of hash-checked crawler snapshots. Profession publication produces independently addressable knowledge, one collection and expertise pointing to its exact revision. Two readers consume the same Canon revision with no duplicate knowledge writes. Scoped knowledge reads reject other namespaces and missing revisions.
+
+The existing four lifecycle operations are preserved. Companion tools are `publish`, `missions`, `pause`, `resume` and `knowledge`, all declared through the same generic CLI shim, allowlist and read-only annotations. No additional MCP server, knowledge store, scheduler or runtime is added.
+
+Browser execution with synthetic fixtures selected a profession mission, reviewed its brief, ran the same research controller, read the structured candidate expertise with source links and published the collection/definition into isolated Canon fixtures. The original report and model-review limitations remained visible. This is a UI/backend flow proof with synthetic evidence, not quality acceptance for a real profession or installed MC acceptance.
+
+Durable restart-stage resume, actual Hub expertise-socket import/agent deployment, full person simulation runtime, automatic knowledge promotion/recurring missions and distributed workers remain unimplemented. The README phase matrix keeps these gaps explicit. Source support is not installation proof; installed evidence is recorded separately after the normal plugin update.
+
+Source validation before installation: full suite **149 tests passed, zero skipped** with the real shared CLI shim and compiled Canon writer supplied; JavaScript syntax and diff checks passed.

@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import uuid
 
 from .cli import dump, validate, REA_OPERATIONS
+from .missions import normalize as mission_input, permits, output_instruction, validate_output
 from .providers import CodexModel, Crawlee, PublicWeb, ProviderError, ScraplingPlugin
 from .processes import bounded_run, retained_diagnostic
 
@@ -66,6 +67,7 @@ DEFAULT_COUNCIL = ['customer', 'systems', 'business', 'challenger']
 
 def council_roles(request, experts):
     selected = [COUNCIL_SPECIALISTS[key] for key in request['council_members']]
+    selected += [(s['name'], s['responsibilities']) for s in request.get('mission', {}).get('specialists', [])]
     if request['council_auto_experts']:
         selected += [(str(x.get('role', 'Domain specialist'))[:80],
                       str(x.get('lens', 'Subject-specific gaps'))[:300])
@@ -112,6 +114,7 @@ def workstream(value):
 
 def brief(value):
     if not isinstance(value, dict): raise ValueError('Research brief must be an object')
+    mission = mission_input(value.get('mission'))
     preset = value.get('preset')
     if preset is not None:
         if preset != 'pre-build': raise ValueError('Unknown research preset')
@@ -120,7 +123,7 @@ def brief(value):
         value = {**value, **fixed, 'council': value.get('council', True), 'workstream': workstream(value.get('workstream'))}
         references = [x for x in value['workstream']['references'] if re.fullmatch(r'https://\S{1,1990}', x)]
         value['urls'] = list(dict.fromkeys(list(value.get('urls', [])) + references))[:12]
-    question = value.get('question', '')
+    question = value.get('question', ('Research '+mission['type']+': '+mission['target']) if mission else '')
     if not isinstance(question,str):raise ValueError('Research question must be text')
     question=question.strip()
     if not 10 <= len(question) <= 3000: raise ValueError('Describe a research question in 10–3000 characters')
@@ -143,19 +146,21 @@ def brief(value):
     documents = value.get('documents', [])
     if not isinstance(documents, list) or len(documents)>12 or any(not isinstance(x,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',x) for x in documents):
         raise ValueError('Select at most 12 configured document names')
+    if mission and mission['type']=='council' and value.get('council') is False:raise ValueError('A Council mission must run its Council')
     if not isinstance(value.get('council',True),bool):raise ValueError('Challenge round must be true or false')
-    members = value.get('council_members', DEFAULT_COUNCIL)
+    members = value.get('council_members', [] if mission and mission['specialists'] else DEFAULT_COUNCIL)
     if (not isinstance(members, list) or len(members) > 6
             or any(not isinstance(x, str) or x not in COUNCIL_SPECIALISTS for x in members)):
         raise ValueError('Select up to six known Council specialists')
-    auto_experts = value.get('council_auto_experts', True)
+    auto_experts = value.get('council_auto_experts', not bool(mission and mission['specialists']))
     if not isinstance(auto_experts, bool):raise ValueError('Automatic domain specialists must be true or false')
-    if value.get('council', True) and not members and not auto_experts:
+    if value.get('council', True) and not members and not auto_experts and not (mission and mission['specialists']):
         raise ValueError('Choose a Council specialist or enable automatic domain specialists')
     return dict(question=question, context=context, lenses=lenses, formats=formats, depth=depth,
                 council_members=list(dict.fromkeys(members)), council_auto_experts=auto_experts,
                 council=bool(value.get('council', True)), urls=list(dict.fromkeys(urls)), inspections=inspections, documents=list(dict.fromkeys(documents)),
                 **({'preset': preset, 'workstream': value['workstream']} if preset else {}),
+                **({'mission':mission} if mission else {}),
                 privacy='Your question, context, retrieved public passages, selected local documents and excerpts from selected local REA artifacts are sent to the model provider. Select only material you intend to share. Local run records remain on this machine.')
 
 
@@ -216,7 +221,7 @@ class RunStore:
         for file in self.root.glob('*/state.json'):
             try:
                 state = json.loads(file.read_text())
-                if state['status'] in ('queued', 'running', 'reviewing', 'cancelling'):
+                if state['status'] in ('queued', 'running', 'reviewing', 'cancelling', 'pausing', 'paused'):
                     self.update(state['id'], status='interrupted', stage='interrupted',
                                 errors=state.get('errors', []) + ['Process restarted. Evidence retained; no automatic replay. Start a new run.'])
             except (ValueError, KeyError, OSError): continue
@@ -232,14 +237,22 @@ def retain_role_value(entry, key, value):
 
 class ResearchEngine:
     def __init__(self, store, config=None, model=None, web=None, crawlee=None):
-        self.store, self.config, self.model_override = store, config or {}, model
-        self.web = web or PublicWeb(); self.crawlee_override = crawlee; self.acquisition = None; self.scrapling_factory = None
-        self.cancelled = threading.Event()
+        from .canon import operator_config
+        self.store, self.config, self.model_override = store, operator_config(config), model
+        self.web = web or PublicWeb(permitted=lambda url:permits(self.request.get("mission"),url)); self.crawlee_override = crawlee; self.acquisition = None; self.scrapling_factory = None
+        self.cancelled = threading.Event();self.pause_requested=threading.Event()
         self.errors = []; self.sources = []; self.packets = []; self.findings = []; self.requirements = []
         self.gaps = []; self.reviewed = {}; self.serial = 0; self.round = 0
         self.role_calls=[];self.role_lock=threading.Lock()
+        self.call_limit=None;self.concurrency=3;self.request={}
     def check(self):
         if self.cancelled.is_set(): raise InterruptedError('Research cancelled')
+        while self.pause_requested.is_set():
+            with self.role_lock:
+                running=any(r.get('status')=='running' for r in self.role_calls)
+            status='pausing' if running else 'paused'
+            if self.store.read(self.run_id)['status']!=status:self.store.update(self.run_id,status=status)
+            if self.cancelled.wait(.1):raise InterruptedError('Research cancelled')
     def call(self, role, task, data, search=False):
         self.check()
         if isinstance(data,dict) and isinstance(data.get('evidence'),list):
@@ -251,6 +264,7 @@ class ResearchEngine:
         retain_role_value(entry, 'input', dict(role=role, instruction=task, data=data, search=search))
         started = time.monotonic()
         with self.role_lock:
+            if self.call_limit is not None and len(self.role_calls)>=self.call_limit: raise ProviderError('Mission model-call budget exhausted; retained results were not replayed')
             self.role_calls.append(entry);self.store.save(self.run_id,'role-calls.json',self.role_calls)
         try:
             result = self.model.call(role, task, data, search=search)
@@ -300,6 +314,8 @@ class ResearchEngine:
             self.check()
             if len([s for s in self.sources if s.get('url')]) >= limit: break
             url = candidate['url']
+            if not permits(self.request.get('mission'),url):
+                self.gaps.append('Source excluded by mission scope: '+url);continue
             if url in seen: continue
             seen.add(url); sid = f'S{len(self.sources)+1:03}'
             self.event('fetch', f'Retrieving and retaining source {sid}.')
@@ -308,6 +324,7 @@ class ResearchEngine:
                       'limitations': 'No authenticated vendor operation or runtime behavior tested.'}
             try:
                 result = self.web.fetch(url)
+                if not permits(self.request.get('mission'),result['url']):raise ProviderError('Redirect left the permitted mission scope')
                 if len(result['text'].strip()) < 100: raise ProviderError('Page has too little readable content')
                 source.update(state='partial' if result['truncated'] else 'available', artifact_sha256=result['sha256'])
                 source.update(requested_url=url,final_url=result['url'],content_type=result['content_type'],
@@ -329,26 +346,31 @@ class ResearchEngine:
         Never a silent fallback to the public-web fetcher: no Crawlee means no pre-build evidence."""
         # the operator's config, else CRAWLEE_CONFIG (the variable the bridge itself reads; MC's install sets it on the workbench)
         crawlee = self.crawlee_override or Crawlee((self.config.get('crawlee') or {}).get('connection') or os.environ.get('CRAWLEE_CONFIG'))
-        self.acquisition = {'provider': 'crawlee', 'crawlers': ['crawlee'], 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
-        job_site, collected = {}, set()
+        self.acquisition = self.acquisition or {'provider': 'crawlee', 'crawlers': ['crawlee'], 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
+        job_site, collected = {}, set();states={};round_jobs=[]
+        prior_urls={s.get('url') for s in self.sources}|{s.get('requested_url') for s in self.sources}
         sites = {}
         for candidate in candidates:
             url = candidate.get('url') if isinstance(candidate, dict) else None
             host = urlsplit(url).hostname if isinstance(url, str) and url.startswith('https://') else None
-            if host and len(sites.setdefault(host, [])) < 5 and url not in sites[host]: sites[host].append(url)
+            if host and url not in prior_urls and permits(self.request.get('mission'),url) and len(sites.setdefault(host, [])) < 5 and url not in sites[host]: sites[host].append(url)
         topic = (self.request.get('workstream') or {}).get('goal') or self.request['question']
         tags = ['pre-build'] + ([self.request['workstream']['id']] if self.request.get('workstream', {}).get('id') else [])
         try:
+            remaining=max(0,limit-len([s for s in self.sources if s.get('url')]))
             for host, urls in list(sites.items())[:8]:
                 self.check()
+                if not remaining:break
+                pages=min(5,remaining);remaining-=pages
                 try:
-                    job = crawlee.call('crawlee_start', {'urls': urls, 'allowed_domains': [host], 'max_pages': 5, 'max_depth': 1,
+                    job = crawlee.call('crawlee_start', {'urls': urls[:pages], 'allowed_domains': [host], 'max_pages': pages, 'max_depth': 1,
                                                          'topic': topic[:200], 'tags': [t[:60] for t in tags]})
-                    self.acquisition['jobIds'].append(job['id']); job_site[job['id']] = host
+                    self.acquisition['jobIds'].append(job['id']);round_jobs.append(job['id']); job_site[job['id']] = host
+                    self.store.save(self.run_id,'acquisition.json',self.acquisition)
                 except (ProviderError, KeyError, TypeError) as exc:
                     self.acquisition['jobs'].append({'site': host, 'status': 'not started', 'reason': str(exc)[:300]}); self.error(f'Crawlee job for {host} not started')
-            self.event('swarm', f'Crawlee swarm: {len(self.acquisition["jobIds"])} job(s) across {len(sites)} site(s).')
-            pending, end = list(self.acquisition['jobIds']), time.monotonic() + deadline
+            self.event('swarm', f'Crawlee swarm: {len(round_jobs)} job(s) across {len(sites)} site(s).')
+            pending, end = list(round_jobs), time.monotonic() + deadline
             states = {}
             while pending and time.monotonic() < end:
                 self.check()
@@ -378,9 +400,15 @@ class ResearchEngine:
                             text, digest = str(read.get('text', '')), str(read.get('source', {}).get('text_sha256', ''))
                             if len(text.strip()) < 100: raise ProviderError('Source has too little readable content')
                             partial = read.get('end', len(text)) < read.get('total_characters', len(text))
+                            retained_hash=hashlib.sha256(text.encode()).hexdigest()
+                            if not partial and retained_hash != digest:raise ProviderError('Crawlee text does not match its source hash')
+                            if not permits(self.request.get('mission'),source['url']):raise ProviderError('Crawler result left mission scope')
+                            source['upstream_text_sha256']=digest
+                            digest=retained_hash
                             source.update(state='partial' if partial else 'available', artifact_sha256=digest, crawlee={'job': job_id, 'source': item['id']})
                             if partial: source['limitations'] += ' Read the first 20000 characters of the saved text.'
                             (directory / (sid + '.txt')).write_text(text)
+                            (directory / (sid + '.body')).write_bytes(text.encode())
                             self.packets.append({'id': sid, 'title': source['title'], 'url': source['url'], 'text': text, 'state': source['state']})
                             self.acquisition['sourceHashes'].append(digest); collected.add(job_site.get(job_id))
                         except (ProviderError, KeyError, TypeError, ValueError) as exc:
@@ -390,9 +418,17 @@ class ResearchEngine:
                     try: self.acquisition['packs'].append({'job': job_id, 'artifacts': crawlee.call('crawlee_pack', {'job_id': job_id}).get('artifacts', [])})
                     except ProviderError as exc: self.error(f'Crawlee pack for {job_id} unavailable ({str(exc)[:120]})')
             # THE SCRAPLING PLUGIN for what Crawlee could not collect (blocked, changed layout, timed out): named, never quiet
-            blocked = [host for host in list(sites)[:8] if host not in collected]
+            blocked = [host for host in dict.fromkeys(job_site.values()) if host not in collected]
             if blocked: self.scrapling_pass({host: sites[host] for host in blocked}, limit, directory)
         finally:
+            if self.cancelled.is_set():
+                for job_id in round_jobs:
+                    if states.get(job_id,{}).get('status') in ('completed','partial','failed','cancelled'):continue
+                    try:
+                        crawlee.call('crawlee_cancel',{'job_id':job_id})
+                        self.acquisition['jobs'].append({'id':job_id,'status':'cancel-requested'})
+                    except ProviderError:
+                        self.acquisition['jobs'].append({'id':job_id,'status':'cancellation-unconfirmed'})
             if not self.crawlee_override: crawlee.close()
             self.store.save(self.run_id, 'sources.json', self.sources)
             self.store.save(self.run_id, 'acquisition.json', self.acquisition)
@@ -401,6 +437,8 @@ class ResearchEngine:
         parallel, each source hash-checked into the same evidence review; an unavailable plugin is said once, by name."""
         self.event('swarm', f'Scrapling plugin: collecting {len(sites)} site(s) the Crawlee worker could not ({", ".join(sites)}).')
         record = {'sites': list(sites), 'fetched': 0, 'failed': 0}; self.acquisition['scrapling'] = record
+        remaining=max(0,limit-len([s for s in self.sources if s.get('url')]))
+        if not remaining:return
         make = self.scrapling_factory or (lambda: ScraplingPlugin(**((self.config.get('crawlers') or {}).get('scrapling') or {})))
         probe = make()
         try: record['version'] = probe.call('scrapling_status', {}).get('version')
@@ -408,7 +446,7 @@ class ResearchEngine:
             record['unavailable'] = str(exc)[:300]; self.error(f'Scrapling plugin unavailable for {len(sites)} site(s): {str(exc)[:160]}')
             probe.close(); return
         if 'scrapling' not in self.acquisition['crawlers']: self.acquisition['crawlers'].append('scrapling')
-        urls = [u for host_urls in sites.values() for u in host_urls[:3]]
+        urls = [u for host_urls in sites.values() for u in host_urls[:3]][:remaining]
         clients = [probe] + [make() for _ in range(min(2, max(0, len(urls) - 1)))]
         results = {}
         try:
@@ -416,7 +454,10 @@ class ResearchEngine:
                 chunks = [urls[i::len(clients)] for i in range(len(clients))]
                 def run(client, chunk):
                     for url in chunk:
-                        try: results[url] = client.call('scrapling_fetch', {'url': url})
+                        try:
+                            mission=self.request.get('mission') or {}
+                            scope={key:mission[key] for key in ('permitted_domains','excluded_domains') if mission.get(key)}
+                            results[url] = client.call('scrapling_fetch', {'url': url, **scope})
                         except ProviderError as exc: results[url] = exc
                 for future in as_completed([pool.submit(run, c, ch) for c, ch in zip(clients, chunks)]): future.result()
         finally:
@@ -429,13 +470,15 @@ class ResearchEngine:
                       'scope': 'Scrapling plugin, for a site the Crawlee worker could not collect.',
                       'limitations': 'Untrusted reference text collected by the Scrapling plugin. No runtime behavior tested.'}
             text = got.get('text', '') if isinstance(got, dict) else ''
-            if isinstance(got, Exception) or hashlib.sha256(text.encode()).hexdigest() != got.get('text_sha256'):
+            if isinstance(got,dict) and not permits(self.request.get('mission'),got.get('final_url') or url):got=ProviderError('Scrapling result left mission scope')
+            if isinstance(got, Exception) or len(text.strip())<100 or hashlib.sha256(text.encode()).hexdigest() != got.get('text_sha256'):
                 reason = str(got)[:200] if isinstance(got, Exception) else 'text does not match its hash'
                 source.update(state='unavailable', limitations=f'Scrapling could not collect it ({reason}); no claim support.'); record['failed'] += 1
             else:
                 source.update(state='available', url=got.get('final_url') or url, requested_url=url, artifact_sha256=got['text_sha256'],
                               fetcher=got.get('fetcher'), retrieved_at=got.get('retrieved_at') or source['retrieved_at'])
                 (directory / (sid + '.txt')).write_text(text)
+                (directory / (sid + '.body')).write_bytes(text.encode())
                 self.packets.append({'id': sid, 'title': source['title'], 'url': source['url'], 'text': text, 'state': 'available'})
                 self.acquisition['sourceHashes'].append(got['text_sha256']); record['fetched'] += 1
             self.sources.append(source)
@@ -551,7 +594,7 @@ class ResearchEngine:
                        'Separate documented source behavior from proposed TMF controls or inferred business conclusions. '
                        'Quote only one short passage per finding; do not copy whole paragraphs.')
         results = []
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
             futures = {pool.submit(self.call, t.get('role', 'Research specialist'), instruction,
                                     {'brief': self.request, 'task': t, 'evidence': self.packets}): t for t in tasks[:3]}
             for future in as_completed(futures):
@@ -673,7 +716,7 @@ class ResearchEngine:
                 'Keep under 200 words. These are simulated advisory perspectives, not real experts or factual evidence. '
                 'Challenge unsupported claims and identify one consequential omission. Confidence is subjective, not a probability of correctness.')
         positions=[]
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
             futures={pool.submit(self.call,role,task,dict(data,lens=lens)):role for role,lens in roles}
             for future in as_completed(futures):
                 role=futures[future]
@@ -685,12 +728,37 @@ class ResearchEngine:
                         'automatic_domain_specialists':self.request['council_auto_experts'], 'positions':positions})
         self.gaps.extend('Council evidence request: '+str(gap)[:500] for p in positions for gap in p.get('evidence_needed',[])[:2])
         return list(dict.fromkeys(str(q) for p in positions for q in p.get('follow_up_queries',[])[:1]))[:2]
+    def knowledge(self, references):
+        if not references:return
+        from .canon import CanonConnection, CanonUnavailable
+        try:
+            connection=CanonConnection(self.config)
+            for reference in references:
+                self.check();entry=connection.read(reference['id'],reference['revision'])
+                text=entry['body'];sid=f'S{len(self.sources)+1:03}'
+                digest=hashlib.sha256(text.encode()).hexdigest()
+                directory=self.store.directory(self.run_id)/'evidence';directory.mkdir(exist_ok=True)
+                (directory/(sid+'.body')).write_bytes(text.encode());(directory/(sid+'.txt')).write_text(text)
+                source={'id':sid,'title':entry['title'],'kind':'canon-knowledge','state':'available',
+                    'canon':reference,'retrieved_at':timestamp(),'artifact_sha256':digest,
+                    'scope':f'Canon {reference["id"]} revision {reference["revision"]}',
+                    'limitations':'Retained Research knowledge; its original evidence/review limits remain. A candidate is not approved guidance.'}
+                self.sources.append(source);self.packets.append({'id':sid,'title':entry['title'],'text':text,'state':'available'})
+                self.store.save(self.run_id,'sources.json',self.sources)
+        except CanonUnavailable as exc:raise ProviderError(str(exc)) from None
+
     def execute(self, run_id):
         self.run_id=run_id; self.request=json.loads((self.store.directory(run_id)/'brief.json').read_text())
         limits={**DEPTHS[self.request['depth']], **(PRESETS.get(self.request.get('preset'), {}).get('limits') or {})}
+        mission=self.request.get('mission')
+        if mission:
+            if mission['type'] not in ('general','technology','council'):limits['calls']+=2
+            limits.update(mission['budgets'])
+            self.call_limit=limits['calls'];self.concurrency=limits.get('concurrency',3)
         try:
             self.model=self.model_override or CodexModel(self.config.get('codex','codex'), max_calls=limits['calls'])
             self.store.update(run_id,status='running')
+            if mission:self.knowledge(mission['knowledge_refs'])
             self.event('plan','Research lead is decomposing the selected lenses into bounded investigations.')
             plan=self.call('Research lead', 'Plan the investigation. Return {"queries":["..."],'
                            '"tasks":[{"role":"...","question":"..."}],"experts":[{"role":"...","lens":"..."}],'
@@ -699,10 +767,11 @@ class ResearchEngine:
                            'then allocate complementary investigations. Broad requests need the shared foundation before narrow examples; '
                            'focused requests should stay focused. Adapt to supplied context rather than assuming one organization or domain. '
                            'Experts are functional perspectives, not invented credentials.',
-                           {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']}})
+                           {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']},**({'evidence':self.packets} if self.packets else {})})
             criteria=plan.get('success_criteria',[])
             plan['success_criteria']=[str(c)[:1000] for c in criteria[:8] if isinstance(c,str) and c.strip()] if isinstance(criteria,list) else []
             if not plan['success_criteria']: plan['success_criteria']=[self.request['question']]
+            if mission:plan['success_criteria']=list(dict.fromkeys(plan['success_criteria']+mission['completion_criteria']))
             self.store.save(run_id,'plan.json',plan)
             self.gaps.extend('Lead scope limit: '+str(x)[:500] for x in plan.get('scope_limits',[])[:8])
             tasks=plan.get('tasks',[])
@@ -710,8 +779,8 @@ class ResearchEngine:
             candidates=self.search(plan.get('queries',[])[:3])
             seed=[{'url':u,'title':u} for u in self.request['urls']]
             # Reserve two web slots for material follow-up in non-quick runs.
-            if self.request.get('preset') == 'pre-build': self.swarm(seed+candidates, limits['sources'])
-            else: self.fetch(seed+candidates, limits['sources']-(2 if limits['rounds'] else 0))
+            if self.request.get('preset') == 'pre-build' or (mission and mission['collection']=='plugins'): self.swarm(seed+candidates, limits['sources'])
+            else: self.fetch(seed+candidates, limits['sources']-(min(2,max(0,limits['sources']-1)) if limits['rounds'] else 0))
             self.inspect(self.request['inspections'])
             self.documents(self.request.get('documents',[]))
             if not self.packets: raise ProviderError('No readable evidence acquired; research cannot proceed')
@@ -724,7 +793,9 @@ class ResearchEngine:
                 self.round=n+1
                 self.event('follow-up','Lead is investigating material objections before final synthesis.')
                 before=len(self.packets)
-                self.fetch(self.search(queries),limits['sources'])
+                follow_sources=self.search(queries)
+                if mission and mission['collection']=='plugins':self.swarm(follow_sources,limits['sources'])
+                else:self.fetch(follow_sources,limits['sources'])
                 if len(self.packets)==before:
                     self.gaps.append('Follow-up acquired no new readable evidence within the source budget.'); break
                 self.investigate([{'role':'Follow-up investigator','question':'Resolve these objections: '+'; '.join(queries)}])
@@ -769,7 +840,7 @@ class ResearchEngine:
             evidence=directory/'evidence';evidence.mkdir()
             for source in self.sources:
                 if source['state']=='unavailable':continue
-                retained_text=source.get('url') or source.get('kind')=='local-document'
+                retained_text=source.get('url') or source.get('kind') in ('local-document','canon-knowledge')
                 original=parent/'evidence'/(source['id']+'.body') if retained_text else parent/(source['id']+'.json')
                 if hashlib.sha256(original.read_bytes()).hexdigest()!=source['artifact_sha256']: raise ProviderError('Parent source integrity mismatch')
                 shutil.copyfile(original,evidence/original.name if retained_text else directory/original.name)
@@ -777,8 +848,8 @@ class ResearchEngine:
             self.store.save(run_id,'revision.json',{'parent_id':parent_id,'parent_report_sha256':report_hash,'feedback':feedback,
                 'scope':'Retained-evidence synthesis revision; original retrieval times preserved; no source acquisition or automatic replay'})
             self.errors=['Retained source '+s['id']+' is unavailable' for s in self.sources if s['state']=='unavailable']
-            limits={'sources':0,'rounds':0,'calls':4}
-            self.model=self.model_override or CodexModel(self.config.get('codex','codex'),max_calls=4)
+            limits={'sources':0,'rounds':0,'calls':4+(2 if self.request.get('mission',{}).get('type') not in (None,'general','technology','council') else 0)}
+            self.model=self.model_override or CodexModel(self.config.get('codex','codex'),max_calls=limits['calls'])
             self.store.update(run_id,status='running',parent_id=parent_id)
             self.publish(plan,self.accepted(),limits,[])
         except InterruptedError:
@@ -786,6 +857,47 @@ class ResearchEngine:
         except Exception as exc:
             detail=str(exc)[:200] if isinstance(exc,ProviderError) else type(exc).__name__
             self.store.update(run_id,status='failed',stage='failed',errors=['Revision stopped: '+detail])
+
+    def mission_output(self, record, accepted):
+        mission=self.request['mission']
+        if mission['type'] in ('general','technology'):return
+        if mission['type']=='council':
+            council=self.store.directory(self.run_id)/'council.json'
+            if not council.exists():
+                self.error('Council mission produced no Council record');return
+            self.store.save(self.run_id,'intelligence.json',{'schema':'tmf-research-intelligence/1',
+                'run_id':self.run_id,'mission_type':'council','review_status':'candidate',
+                'independent_verification':False,'verification':'simulated-perspectives',
+                'configuration':mission['specialists'],'council':json.loads(council.read_text())})
+            return
+        try:
+            self.event('intelligence','Organizing mission outputs against the reviewed evidence.')
+            raw=self.call('Mission intelligence analyst',output_instruction(mission),
+                          {'mission':mission,'findings':accepted,'unknowns':record['unknowns']})
+            self.store.save(self.run_id,'intelligence-draft.json',raw)
+            output=validate_output(mission,raw,accepted,self.run_id,timestamp())
+            review=self.call('Mission output evidence reviewer',
+                'Check every company identity, factual claim, inference, recommendation and specialty instruction against the supplied findings. '
+                'Return {"supported":true,"concerns":["..."]}. Refuse unsupported identity associations, invented company problems, '
+                'unfounded professional procedures, missing jurisdiction/date caveats, inferred private thoughts, claims of person identity/endorsement, '
+                'or promoted uncertain evidence. A citation resolving is not entailment. Confidence is not verification. '
+                'Specialties are draft expertise only, never permissions or deployed agents. This is model review, not independent certification.',
+                {'mission':mission,'output':output,'reviewed_findings':accepted})
+            self.store.save(self.run_id,'intelligence-review.json',review)
+            if review.get('supported') is not True:raise ProviderError('Mission output evidence review withheld the proposed output')
+            output['verification']='model-reviewed'
+            def unknowns(value):
+                if isinstance(value,dict):
+                    if value.get('label')=='unknown':self.error('Mission section remains unknown: '+str(value.get('heading') or value.get('text'))[:160])
+                    for child in value.values():unknowns(child)
+                elif isinstance(value,list):
+                    for child in value:unknowns(child)
+            unknowns(output)
+            source_map={s['id']:s for s in record['sources']}
+            output['evidence']={f['id']:{'finding':f,'sources':[source_map[sid] for sid in f['sources']]} for f in accepted}
+            self.store.save(self.run_id,'intelligence.json',output)
+        except (ProviderError,ValueError,KeyError,TypeError) as exc:
+            self.error('Mission output withheld: '+str(exc)[:200])
 
     def publish(self, plan, accepted, limits, queries):
         run_id=self.run_id
@@ -878,10 +990,12 @@ class ResearchEngine:
             unknowns=['No consolidated decision questions were published. Inspect the retained research log before treating this result as complete.']
         record=dict(schema_version=1,title=str(synthesis.get('title') or self.request['question']),question=self.request['question'],
                     summary=str(synthesis.get('summary') or 'Partial research result'),sources=self.sources,
-                    findings=[{**{k:f[k] for k in ('text','label','sources')},
+                    findings=[{**{k:f[k] for k in ('id','text','label','sources','quote','review','review_reason') if k in f},
                                'caveat':' '.join(dict.fromkeys([f['caveat']]+[d['caveat'] for d in self.findings if d.get('duplicate_of')==f['id']]))} for f in accepted],
-                    requirements=requirements,unknowns=unknowns,research_log=research_log)
+                    requirements=requirements,unknowns=unknowns,research_log=research_log,
+                    **({'mission':self.request['mission']} if self.request.get('mission') else {}))
         validate(record);self.store.save(run_id,'report.json',record)
+        if self.request.get('mission'):self.mission_output(record,accepted)
         self.check()
         spec=None
         if self.request.get('preset')=='pre-build':

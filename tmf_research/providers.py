@@ -52,8 +52,9 @@ class PublicWeb:
     The OS DNS resolver has its own timeout, checked before any connection.
     This local desktop transport is not a hosted multi-tenant service.
     """
-    def __init__(self, max_bytes=750_000, timeout=20):
+    def __init__(self, max_bytes=750_000, timeout=20, permitted=None):
         self.max_bytes, self.timeout = max_bytes, timeout
+        self.permitted=permitted or (lambda _url:True)
         # Use an OS trust bundle where present; never disable certificate verification.
         ca = '/etc/ssl/cert.pem'
         context = ssl.create_default_context(cafile=ca if Path(ca).is_file() else None)
@@ -64,6 +65,7 @@ class PublicWeb:
         from email.message import Message
         deadline=time.monotonic()+self.timeout
         for hop in range(5):
+            if not self.permitted(url):raise ProviderError("Source URL is outside the permitted mission scope")
             public_url(url)
             parsed=urlsplit(url)
             addresses=socket.getaddrinfo(parsed.hostname,443,type=socket.SOCK_STREAM)
@@ -231,10 +233,14 @@ class McpPlugin:
         return data
     def close(self):
         if self.process is not None:
-            self.process.terminate()
-            try: self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired: self.process.kill()
-            self.process = None
+            process=self.process;self.process=None
+            if process.poll() is None:
+                process.terminate()
+                try:process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill();process.wait(timeout=5)
+            for stream in (process.stdin,process.stdout,process.stderr):
+                if stream is not None:stream.close()
 
 
 class Crawlee(McpPlugin):

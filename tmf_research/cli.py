@@ -237,9 +237,23 @@ def main(argv=None):
         if command != 'cancel':
             client.add_argument('--cursor', type=int, default=0)
             client.add_argument('--sha256', help='Previous page hash; refuses a changed result')
+    for operation, description in [('pause','Pause new research stages; in-flight provider work may finish'),
+                                   ('resume','Resume the same paused controller; no restart replay')]:
+        control=sub.add_parser(operation,help=description)
+        control.add_argument('--id',required=True,help='Saved active research run id')
+    knowledge=sub.add_parser('knowledge',help='Read a published Research knowledge revision from the configured Canon namespace')
+    knowledge.add_argument('--id',required=True)
+    knowledge.add_argument('--revision',type=int)
+    knowledge.add_argument('--cursor',type=int,default=0)
+    knowledge.add_argument('--sha256')
+    publication = sub.add_parser("publish", help="Save a finished report to Canon as candidates; never approve knowledge")
+    publication.add_argument("--id", required=True, help="Saved research run id")
+    missions = sub.add_parser("missions", help="Read supported mission types and input requirements; no research starts")
+    missions.add_argument("--cursor", type=int, default=0)
+    missions.add_argument("--sha256")
     args = parser.parse_args(argv)
     try:
-        if args.command in ('submit', 'status', 'result', 'cancel'):
+        if args.command in ('submit', 'status', 'result', 'cancel', 'publish', 'missions', 'pause', 'resume', 'knowledge'):
             from .client import execute, WorkbenchError
             try:
                 print(dump(execute(args)), end='')

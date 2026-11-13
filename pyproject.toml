@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tmf-research"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local TMF Council research workbench with evidence review, REA inspection and presentation adapters"
 requires-python = ">=3.11"
 license = "MIT"

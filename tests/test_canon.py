@@ -21,6 +21,16 @@ class CanonFixture:
         fixture = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args): pass
+            def do_GET(self):
+                from urllib.parse import urlsplit,parse_qs
+                path=urlsplit(self.path).path;identity=path.rsplit('/',1)[1]
+                query=parse_qs(urlsplit(self.path).query)
+                entry=fixture.entries.get(identity)
+                if query.get('revision'):
+                    entry=next((r for r in fixture.history if r['id']==identity and r['revision']==int(query['revision'][0])),None)
+                if not entry:self.send_response(404);self.end_headers();return
+                value=json.dumps({'entry':entry}).encode()
+                self.send_response(200);self.send_header('Content-Length',str(len(value)));self.end_headers();self.wfile.write(value)
             def do_POST(self):
                 with fixture.guard:
                     fixture.calls += 1
@@ -290,3 +300,56 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(identities[0]['fields']['reviewStatus'],'approved')
         self.assertEqual(identities[0]['fields']['status'],'current')
         self.assertEqual(len(self.fixture.history),rows)
+
+    def test_professional_publication_keeps_one_collection_and_shared_revision_refs(self):
+        from tmf_research.missions import normalize, validate_output
+        from test_missions import output
+        self.report['findings'][0]['id']='F001'
+        mission=normalize({'schema':'tmf-research-mission/1','type':'profession','target':'Synthetic operations'})
+        raw=output('profession');raw['knowledge']['domains'][0]['label']='inferred'
+        intelligence=validate_output(mission,raw,self.report['findings'],self.rid,'2026-01-01T00:00:00Z')
+        intelligence['verification']='model-reviewed'
+        self.store.save(self.rid,'report.json',self.report);self.store.save(self.rid,'intelligence.json',intelligence)
+        first=self.publish();self.assertEqual(first['status'],'published-candidate',first)
+        collections=[e for e in self.fixture.entries.values() if json.loads(e['body'])['entity']=='knowledge-collection']
+        self.assertEqual(len(collections),1)
+        roles=[e for e in self.fixture.entries.values() if json.loads(e['body'])['entity']=='specialty-definition']
+        self.assertEqual(len(roles),1)
+        definition=json.loads(roles[0]['body'])['definition']
+        reference=definition['knowledge_references'][0]
+        self.assertEqual(reference,{'id':collections[0]['id'],'revision':collections[0]['revision']})
+        self.assertFalse(definition['grants_authority'])
+        before=len(self.fixture.history)
+        # Two callers retrieve the very same authoritative revision, without copying knowledge.
+        for _ in range(2):
+            entry=CanonConnection(self.fixture.config).read(reference['id'],reference['revision'])
+            self.assertEqual(entry['id'],reference['id'])
+        self.assertEqual(len(self.fixture.history),before)
+        self.assertEqual(self.publish(),first)
+        self.assertEqual(len(self.fixture.history),before)
+        knowledge=[e for e in self.fixture.entries.values() if json.loads(e['body'])['entity']=='professional-knowledge']
+        self.assertEqual(knowledge[0]['fields']['profession'],'Synthetic operations')
+
+    def test_knowledge_reads_refuse_other_namespaces_and_stale_or_unknown_revisions(self):
+        publication=self.publish();identity=publication['mission']['id']
+        other={**self.fixture.config,'canon':{**self.fixture.config['canon'],'identity_scope':'another-workspace'}}
+        with self.assertRaises(CanonUnavailable):CanonConnection(other).read(identity)
+        with self.assertRaises(CanonUnavailable):CanonConnection(self.fixture.config).read(identity,99)
+        self.assertEqual(CanonConnection(self.fixture.config).read(identity,1)['revision'],1)
+
+    def test_local_system_mode_is_explicit_and_never_a_bearer_auth_fallback(self):
+        from tmf_research.canon import operator_config
+        configured={'canon':{'url':'http://127.0.0.1:4325','identity_scope':'synthetic-system','auth':'local-system','author':'synthetic-research'}}
+        connection=CanonConnection(configured)
+        self.assertEqual(connection.headers,{'X-Canon-Actor':'synthetic-research'})
+        self.assertIsNone(connection.token)
+        for settings in ({**configured['canon'],'url':'http://outside.example:4325'},
+                         {**configured['canon'],'author':'untrusted/name'},
+                         {**configured['canon'],'auth':'unknown'}):
+            with self.assertRaises(CanonUnavailable):CanonConnection({'canon':settings})
+        bearer={**configured['canon'],'auth':'bearer','token_env':'NO_SYNTHETIC_TOKEN_CONFIGURED'}
+        with self.assertRaises(CanonUnavailable):CanonConnection({'canon':bearer})
+        result=operator_config({}, {'TMF_RESEARCH_CANON_URL':'http://127.0.0.1:4325','TMF_RESEARCH_CANON_SCOPE':'synthetic-system','TMF_RESEARCH_CANON_AUTH':'local-system'})
+        self.assertEqual(result['canon']['identity_scope'],'synthetic-system')
+        self.assertEqual(result['canon']['auth'],'local-system')
+        self.assertEqual(operator_config(configured,{'TMF_RESEARCH_CANON_URL':'http://127.0.0.1:9999'}),configured)

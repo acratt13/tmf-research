@@ -34,19 +34,19 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(store.create(request, request_id='fixture-request'), first)
             self.assertEqual(store.read(first)['status'], 'interrupted')
 
-    def test_provider_metadata_has_only_four_commands_and_truthful_read_only_hints(self):
+    def test_provider_metadata_preserves_lifecycle_and_declares_new_tools_truthfully(self):
         from importlib.resources import files
         root = files('tmf_research').joinpath('mc')
-        self.assertEqual(json.loads(root.joinpath('allow.json').read_text())['allow'], ['submit', 'status', 'result', 'cancel'])
+        self.assertEqual(json.loads(root.joinpath('allow.json').read_text())['allow'], ['submit', 'status', 'result', 'cancel', 'publish', 'missions', 'pause', 'resume', 'knowledge'])
         hints = json.loads(root.joinpath('tool-annotations.json').read_text())['toolAnnotations']
-        self.assertEqual({key.rsplit('_', 1)[1]: value['readOnlyHint'] for key, value in hints.items()}, {'submit': False, 'status': True, 'result': True, 'cancel': False})
+        self.assertEqual({key.rsplit('_', 1)[1]: value['readOnlyHint'] for key, value in hints.items()}, {'submit': False, 'status': True, 'result': True, 'cancel': False, 'publish': False, 'missions': True, 'pause': False, 'resume': False, 'knowledge':True})
         import tomllib
         from pathlib import Path
         server = json.loads(root.joinpath('mcp-servers.json').read_text())['mcpServers'][0]
         command = server['args'][-1]
         scripts = tomllib.loads((Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text())['project']['scripts']
         self.assertEqual(scripts[command], 'tmf_research.cli:main')
-        self.assertEqual(set(hints), {f"mcp.{server['name']}/{command}_{op}" for op in ('submit', 'status', 'result', 'cancel')})
+        self.assertEqual(set(hints), {f"mcp.{server['name']}/{command}_{op}" for op in ('submit', 'status', 'result', 'cancel', 'publish', 'missions', 'pause', 'resume', 'knowledge')})
         self.assertEqual(server['probe']['tool'], command + '_status')
 
 
@@ -65,6 +65,7 @@ class WorkbenchCliTests(unittest.TestCase):
         class FakeEngine:
             def __init__(self, store, config):
                 self.store, self.cancelled = store, threading.Event()
+                self.pause_requested = threading.Event()
                 self.release = threading.Event()
                 self.done = threading.Event()
                 owner.engines.append(self)
@@ -211,3 +212,20 @@ class WorkbenchCliTests(unittest.TestCase):
             code, body, raw = self.cli('cancel', '--id', 'a' * 32)
         self.assertEqual(code, 1); self.assertEqual(body['http_status'], 403)
         self.assertFalse(token in raw); self.assertIn('[redacted]', body['reason'])
+
+    def test_discovery_publish_pause_and_resume_use_the_existing_workbench(self):
+        code,page,_=self.cli('missions')
+        self.assertEqual(code,0);self.assertEqual(page['status'],'available')
+        # Discovery is paged like other reads; it starts no engine.
+        self.assertEqual(self.engines,[])
+        code,submitted,_=self.cli('submit','--request-id','controls','--brief-json',json.dumps({'question':'How should bounded research controls behave?'}))
+        self.assertEqual(code,0)
+        for operation,status in [('pause','pausing'),('resume','running')]:
+            code,response,_=self.cli(operation,'--id',submitted['id'])
+            self.assertEqual(code,0);self.assertEqual(response['status'],status)
+            self.assertEqual(self.engines[0].pause_requested.is_set(),operation=='pause')
+        code,response,_=self.cli('publish','--id',submitted['id'])
+        self.assertEqual(code,1);self.assertEqual(response['http_status'],409)
+        code,response,_=self.cli('knowledge','--id','cn-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','--revision','1')
+        self.assertEqual(code,1);self.assertEqual(response['http_status'],503)
+        self.assertEqual(len(self.engines),1)
