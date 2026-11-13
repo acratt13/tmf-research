@@ -70,7 +70,11 @@ def serve(root, config=None, port=8765):
                     request=json.loads((store.directory(run_id)/'brief.json').read_text())
                     claims=store.directory(run_id)/'claims.json'
                     withheld=sum(c.get('review') not in ('supported','proposal') for c in json.loads(claims.read_text())) if claims.exists() else None
-                    self.reply(200,{**store.read(run_id),'question':request['question'],'lenses':request['lenses'],
+                    state=store.read(run_id);resume={}
+                    if state['status']=='interrupted':
+                        try:ResearchEngine.resumable(store,run_id);resume={'resume_eligible':True}
+                        except (ValueError,OSError):resume={'resume_eligible':False,'resume_reason':'No recoverable checkpoint is available for this interrupted stage; retained evidence remains available'}
+                    self.reply(200,{**state,**resume,'question':request['question'],'lenses':request['lenses'],
                                     'formats':request['formats'],'withheld_claims':withheld,**({'mission':request['mission']} if request.get('mission') else {})});return
                 if path.startswith('/outputs/'):
                     _,_,run_id,name=path.split('/')
@@ -196,8 +200,20 @@ def serve(root, config=None, port=8765):
                 if self.path in ('/api/pause','/api/resume'):
                     with lock:
                         engine=active.get(payload.get('id'))
+                        if not engine and self.path=='/api/resume':
+                            run_id=payload.get('id')
+                            if active:return self.reply(409,{'error':'Wait for the active job before resuming another'})
+                            try:ResearchEngine.resumable(store,run_id)
+                            except ValueError as exc:return self.reply(409,{'error':str(exc)})
+                            engine=ResearchEngine(store,config);active[run_id]=engine
+                            def restart():
+                                try:engine.execute(run_id,resume=True)
+                                finally:
+                                    with lock:active.pop(run_id,None)
+                            threading.Thread(target=restart,daemon=True).start()
+                            return self.reply(202,{'id':run_id,'status':'resuming','note':'Resuming durable saved stages without repeating completed collection or analysis'})
                         if not engine or not hasattr(engine,'pause_requested'):
-                            return self.reply(409,{'error':'No active research controller can pause or resume this run; interrupted jobs are not automatically replayed'})
+                            return self.reply(409,{'error':'No eligible research controller is available for this operation'})
                         state=store.read(payload['id'])
                         if self.path=='/api/pause':
                             if state['status'] not in ('queued','running','reviewing','pausing','paused'):

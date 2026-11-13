@@ -223,7 +223,7 @@ class RunStore:
                 state = json.loads(file.read_text())
                 if state['status'] in ('queued', 'running', 'reviewing', 'cancelling', 'pausing', 'paused'):
                     self.update(state['id'], status='interrupted', stage='interrupted',
-                                errors=state.get('errors', []) + ['Process restarted. Evidence retained; no automatic replay. Start a new run.'])
+                                errors=state.get('errors', []) + ['Process restarted. Evidence retained; no automatic replay. Eligible runs can resume from saved checkpoints.'])
             except (ValueError, KeyError, OSError): continue
 
 
@@ -244,7 +244,43 @@ class ResearchEngine:
         self.errors = []; self.sources = []; self.packets = []; self.findings = []; self.requirements = []
         self.gaps = []; self.reviewed = {}; self.serial = 0; self.round = 0
         self.role_calls=[];self.role_lock=threading.Lock()
-        self.call_limit=None;self.concurrency=3;self.request={}
+        self.call_limit=None;self.concurrency=3;self.request={};self.execution=None;self.replaying=False
+    SNAPSHOT_FIELDS = ('errors','sources','packets','findings','requirements','gaps','reviewed','serial','round','acquisition','coverage_result')
+    def checkpoint(self, key, action):
+        """One durable execution record in the existing run directory, not a scheduler."""
+        if self.execution is None:return action()
+        saved=self.execution['completed'].get(key)
+        if saved is not None:return saved['result']
+        self.execution['inflight']=key
+        self.store.save(self.run_id,'execution.json',self.execution)
+        result=action()
+        self.execution['completed'][key]={'result':result}
+        self.execution['snapshot']={name:getattr(self,name) for name in self.SNAPSHOT_FIELDS if hasattr(self,name)}
+        evidence=self.store.directory(self.run_id)/'evidence'
+        self.execution['evidence']={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in evidence.glob('*') if f.is_file()}
+        self.execution['inflight']=None
+        self.store.save(self.run_id,'execution.json',self.execution)
+        return result
+    @staticmethod
+    def resumable(store, run_id):
+        """Validate before dispatch; incomplete external operations are never replayed."""
+        if store.read(run_id)['status']!='interrupted':raise ValueError('Only an interrupted saved mission can restart from checkpoints')
+        path=store.directory(run_id)/'execution.json'
+        if not path.exists():raise ValueError('This older run has no durable execution checkpoint')
+        value=json.loads(path.read_text())
+        request=json.loads((store.directory(run_id)/'brief.json').read_text())
+        digest=hashlib.sha256(json.dumps(request,sort_keys=True).encode()).hexdigest()
+        if value.get('schema')!='tmf-research-execution/1' or value.get('brief_sha256')!=digest:
+            raise ValueError('Saved mission checkpoint does not match its brief')
+        key=value.get('inflight') or ''
+        if key in ('collect','inspect','documents','publish') or key.startswith('collect:'):
+            raise ValueError('The external collection, inspection or export stage was interrupted; its retained evidence needs recovery before it can resume')
+        for name,digest in value.get('evidence',{}).items():
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+',name):raise ValueError('Invalid checkpoint evidence reference')
+            file=store.directory(run_id)/'evidence'/name
+            if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest()!=digest:
+                raise ValueError('Retained checkpoint evidence integrity mismatch')
+        return value
     def check(self):
         if self.cancelled.is_set(): raise InterruptedError('Research cancelled')
         while self.pause_requested.is_set():
@@ -260,7 +296,16 @@ class ResearchEngine:
             packets=data['evidence'];per_source=min(16000,100000//max(1,len(packets)))
             query=json.dumps({'brief':data.get('brief',{}),'task':data.get('task',{})},ensure_ascii=False)
             data={**data,'evidence':[{**p,'text':source_passages(p['text'],query,per_source)} for p in packets]}
-        entry={'id':uuid.uuid4().hex,'role':role,'started_at':timestamp(),'status':'running','search_enabled':search}
+        request_sha256=hashlib.sha256(json.dumps(dict(role=role,instruction=task,data=data,search=search),sort_keys=True).encode()).hexdigest()
+        if self.replaying:
+            with self.role_lock:
+                prior=next((r for r in self.role_calls if r.get('request_sha256')==request_sha256 and r.get('status')=='returned'),None)
+                if prior:
+                    if prior.get('output_redacted') or 'output' not in prior:raise ProviderError('A redacted retained model result cannot be replayed as exact evidence')
+                    raw=json.dumps(prior['output'],ensure_ascii=False)
+                    if hashlib.sha256(raw.encode()).hexdigest()!=prior['output_sha256']:raise ProviderError('Retained model result integrity mismatch')
+                    return json.loads(raw)
+        entry={'request_sha256':request_sha256,'id':uuid.uuid4().hex,'role':role,'started_at':timestamp(),'status':'running','search_enabled':search}
         retain_role_value(entry, 'input', dict(role=role, instruction=task, data=data, search=search))
         started = time.monotonic()
         with self.role_lock:
@@ -747,27 +792,41 @@ class ResearchEngine:
                 self.store.save(self.run_id,'sources.json',self.sources)
         except CanonUnavailable as exc:raise ProviderError(str(exc)) from None
 
-    def execute(self, run_id):
+    def execute(self, run_id, resume=False):
         self.run_id=run_id; self.request=json.loads((self.store.directory(run_id)/'brief.json').read_text())
         limits={**DEPTHS[self.request['depth']], **(PRESETS.get(self.request.get('preset'), {}).get('limits') or {})}
         mission=self.request.get('mission')
         if mission:
             if mission['type'] not in ('general','technology','council'):limits['calls']+=2
             limits.update(mission['budgets'])
-            self.call_limit=limits['calls'];self.concurrency=limits.get('concurrency',3)
+            self.concurrency=limits.get('concurrency',3)
+        self.call_limit=limits['calls']
         try:
+            if resume:
+                self.execution=self.resumable(self.store,run_id);self.replaying=True
+                for name,value in self.execution.get('snapshot',{}).items():
+                    if name in self.SNAPSHOT_FIELDS:setattr(self,name,value)
+                path=self.store.directory(run_id)/'role-calls.json'
+                self.role_calls=json.loads(path.read_text()) if path.exists() else []
+                for row in self.role_calls:
+                    if row['status']=='running':row.update(status='interrupted',finished_at=timestamp())
+                self.store.save(run_id,'role-calls.json',self.role_calls)
+                self.event('resume','Resuming the saved controller checkpoint. Completed stages and matching retained model results are reused; incomplete model calls consume the existing budget and may be retried.')
+            else:
+                self.execution={'schema':'tmf-research-execution/1','brief_sha256':hashlib.sha256(json.dumps(self.request,sort_keys=True).encode()).hexdigest(),'completed':{},'snapshot':{},'evidence':{},'inflight':None}
+                self.store.save(run_id,'execution.json',self.execution)
             self.model=self.model_override or CodexModel(self.config.get('codex','codex'), max_calls=limits['calls'])
             self.store.update(run_id,status='running')
-            if mission:self.knowledge(mission['knowledge_refs'])
+            if mission:self.checkpoint('knowledge',lambda:self.knowledge(mission['knowledge_refs']))
             self.event('plan','Research lead is decomposing the selected lenses into bounded investigations.')
-            plan=self.call('Research lead', 'Plan the investigation. Return {"queries":["..."],'
+            plan=self.checkpoint('plan',lambda:self.call('Research lead', 'Plan the investigation. Return {"queries":["..."],'
                            '"tasks":[{"role":"...","question":"..."}],"experts":[{"role":"...","lens":"..."}],'
                            '"success_criteria":["..."],"scope_limits":["..."]}. At most 3 queries, 3 tasks and 2 domain experts. '
                            'Cover every selected lens in the three tasks. First map the relevant scope and relationships, '
                            'then allocate complementary investigations. Broad requests need the shared foundation before narrow examples; '
                            'focused requests should stay focused. Adapt to supplied context rather than assuming one organization or domain. '
                            'Experts are functional perspectives, not invented credentials.',
-                           {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']},**({'evidence':self.packets} if self.packets else {})})
+                           {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']},**({'evidence':self.packets} if self.packets else {})}))
             criteria=plan.get('success_criteria',[])
             plan['success_criteria']=[str(c)[:1000] for c in criteria[:8] if isinstance(c,str) and c.strip()] if isinstance(criteria,list) else []
             if not plan['success_criteria']: plan['success_criteria']=[self.request['question']]
@@ -776,37 +835,37 @@ class ResearchEngine:
             self.gaps.extend('Lead scope limit: '+str(x)[:500] for x in plan.get('scope_limits',[])[:8])
             tasks=plan.get('tasks',[])
             if not isinstance(tasks,list) or not tasks or any(not isinstance(t,dict) for t in tasks): raise ProviderError('Lead returned no valid investigation tasks')
-            candidates=self.search(plan.get('queries',[])[:3])
+            candidates=self.checkpoint('search:0',lambda:self.search(plan.get('queries',[])[:3]))
             seed=[{'url':u,'title':u} for u in self.request['urls']]
             # Reserve two web slots for material follow-up in non-quick runs.
-            if self.request.get('preset') == 'pre-build' or (mission and mission['collection']=='plugins'): self.swarm(seed+candidates, limits['sources'])
-            else: self.fetch(seed+candidates, limits['sources']-(min(2,max(0,limits['sources']-1)) if limits['rounds'] else 0))
-            self.inspect(self.request['inspections'])
-            self.documents(self.request.get('documents',[]))
+            if self.request.get('preset') == 'pre-build' or (mission and mission['collection']=='plugins'): self.checkpoint('collect',lambda:self.swarm(seed+candidates, limits['sources']))
+            else: self.checkpoint('collect',lambda:self.fetch(seed+candidates, limits['sources']-(min(2,max(0,limits['sources']-1)) if limits['rounds'] else 0)))
+            self.checkpoint('inspect',lambda:self.inspect(self.request['inspections']))
+            self.checkpoint('documents',lambda:self.documents(self.request.get('documents',[])))
             if not self.packets: raise ProviderError('No readable evidence acquired; research cannot proceed')
-            self.investigate(tasks)
-            follow=self.review() or []
-            positions_queries=self.council(plan.get('experts',[])) if self.request['council'] else []
-            queries=self.coverage(plan,follow+positions_queries)
+            self.checkpoint('investigate:0',lambda:self.investigate(tasks))
+            follow=self.checkpoint('review:0',self.review) or []
+            positions_queries=self.checkpoint('council',lambda:self.council(plan.get('experts',[]))) if self.request['council'] else []
+            queries=self.checkpoint('coverage:0',lambda:self.coverage(plan,follow+positions_queries))
             for n in range(limits['rounds']):
                 if not queries: break
                 self.round=n+1
                 self.event('follow-up','Lead is investigating material objections before final synthesis.')
-                before=len(self.packets)
-                follow_sources=self.search(queries)
-                if mission and mission['collection']=='plugins':self.swarm(follow_sources,limits['sources'])
-                else:self.fetch(follow_sources,limits['sources'])
+                before=self.checkpoint(f'before:{n+1}',lambda:len(self.packets))
+                follow_sources=self.checkpoint(f'search:{n+1}',lambda:self.search(queries))
+                if mission and mission['collection']=='plugins':self.checkpoint(f'collect:{n+1}',lambda:self.swarm(follow_sources,limits['sources']))
+                else:self.checkpoint(f'collect:{n+1}',lambda:self.fetch(follow_sources,limits['sources']))
                 if len(self.packets)==before:
                     self.gaps.append('Follow-up acquired no new readable evidence within the source budget.'); break
-                self.investigate([{'role':'Follow-up investigator','question':'Resolve these objections: '+'; '.join(queries)}])
-                review_queries=self.review() or []
-                queries=self.coverage(plan,review_queries)
+                self.checkpoint(f'investigate:{n+1}',lambda:self.investigate([{'role':'Follow-up investigator','question':'Resolve these objections: '+'; '.join(queries)}]))
+                review_queries=self.checkpoint(f'review:{n+1}',self.review) or []
+                queries=self.checkpoint(f'coverage:{n+1}',lambda:self.coverage(plan,review_queries))
             accepted=self.accepted()
             self.gaps.extend('Coverage '+c['status']+': '+c['question']+' — '+c['reason'] for c in self.coverage_result['criteria'] if c['status']!='answered')
             self.gaps.extend('Unresolved follow-up query: '+str(q) for q in queries)
             self.store.save(run_id,'claims.json',self.findings)
             if not accepted: raise ProviderError('No findings survived evidence review')
-            self.publish(plan,accepted,limits,queries)
+            self.checkpoint('publish',lambda:self.publish(plan,accepted,limits,queries))
         except InterruptedError:
             self.store.update(run_id,status='cancelled',stage='cancelled',finished_at=timestamp(),errors=self.errors)
         except Exception as exc:

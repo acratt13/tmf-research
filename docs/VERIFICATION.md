@@ -47,6 +47,23 @@ The existing four lifecycle operations are preserved. Companion tools are `publi
 
 Browser execution with synthetic fixtures selected a profession mission, reviewed its brief, ran the same research controller, read the structured candidate expertise with source links and published the collection/definition into isolated Canon fixtures. The original report and model-review limitations remained visible. This is a UI/backend flow proof with synthetic evidence, not quality acceptance for a real profession or installed MC acceptance.
 
-Durable restart-stage resume, actual Hub expertise-socket import/agent deployment, full person simulation runtime, automatic knowledge promotion/recurring missions and distributed workers remain unimplemented. The README phase matrix keeps these gaps explicit. Source support is not installation proof; installed evidence is recorded separately after the normal plugin update.
+Actual Hub expertise-socket import/agent deployment, full person simulation runtime, automatic knowledge promotion/recurring missions and distributed workers remain unimplemented. The README phase matrix keeps these gaps explicit. Source support is not installation proof; installed evidence is recorded separately after the normal plugin update.
 
 Source validation before installation: full suite **149 tests passed, zero skipped** with the real shared CLI shim and compiled Canon writer supplied; JavaScript syntax and diff checks passed.
+
+
+## Installed builder acceptance and durable recovery — 2026-11-13
+
+The 0.5.0 Research expansion was installed through the normal existing-plugin update in Builder MC, with the original connection, workbench service and nine tools. The app signature passed before and after; the shared host payload stayed unchanged. No separate agent turn or new paid service was used.
+
+A real bounded technology mission ran through the builders’ granted Link & Sync port using native subscription authentication and official Python documentation. The current service retained its structured mission and budgets. One builder submitted and paused it; the other retried the same request, received the identical run ID and resumed it. A later pause reached `paused`, then resumed. The result remained honestly **partial**, with eight reviewed findings and unresolved cancellation/version questions, and generated Markdown, HTML and builder outputs.
+
+Candidate publication ran through the same granted port. Both builders retrieved the same exact Canon finding revision. Repeated publication preserved the mission, report snapshot and all referenced IDs/revisions. The native Canon record retained `fields.status=draft`, `reviewStatus=candidate` and its typed `supported-by` source link. None was promoted to approved knowledge. These are real installed evidence and publication checks, not fixtures.
+
+The update exposed a host lifecycle defect: existing workbench processes survive a package-file update. Tool discovery and the status probe passed while an older service still rejected a new operation. Its first regression run was preserved and finished before Research alone was refreshed. The host’s generic update/service invalidation needs its owning repair; discovery/probe alone must not be reported as full integration. This finding does not justify replacing the shared host payload or adding a Research-specific lifecycle bypass.
+
+The installed app resolver accepted `query.run` and returned the exact saved-run URL with the native `view` frame. Actual native popup close/reopen, chat-switch and pin persistence remain pending; the shared native window was being used for Canon work. No native popup success is inferred from the resolver receipt.
+
+The 0.5.1 source adds durable execution checkpoints to the existing run directory. Explicit resume checks the unchanged brief and retained evidence hashes, skips completed stages and reuses exact returned model results. Interrupted calls remain recorded, consume the original budget and may be retried with a visible resume event. Interrupted external collection, inspection or export stages and older jobs without checkpoints are explicitly ineligible. No job starts automatically after restart.
+
+Recovery tests include killing an actual research process during evidence review, booting a new workbench, and calling its HTTP resume operation. The saved run completed without repeating lead planning, source discovery, collection or finished specialist analysis. Additional tests cover completed-review reuse, returned sibling-analysis reuse, changed brief/evidence refusal and incomplete external-stage refusal. This is process/HTTP integration with synthetic provider evidence; installed native-provider restart recovery remains untested.

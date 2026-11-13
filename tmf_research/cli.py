@@ -238,7 +238,7 @@ def main(argv=None):
             client.add_argument('--cursor', type=int, default=0)
             client.add_argument('--sha256', help='Previous page hash; refuses a changed result')
     for operation, description in [('pause','Pause new research stages; in-flight provider work may finish'),
-                                   ('resume','Resume the same paused controller; no restart replay')]:
+                                   ('resume','Resume a paused controller or eligible durable saved checkpoint')]:
         control=sub.add_parser(operation,help=description)
         control.add_argument('--id',required=True,help='Saved active research run id')
     knowledge=sub.add_parser('knowledge',help='Read a published Research knowledge revision from the configured Canon namespace')
