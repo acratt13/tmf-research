@@ -216,16 +216,17 @@ def serve(root, config=None, port=8765):
                             return self.reply(202,{'id':run_id,'status':'resuming','note':'Resuming durable saved stages without repeating completed collection or analysis'})
                         if not engine or not hasattr(engine,'pause_requested'):
                             return self.reply(409,{'error':'No eligible research controller is available for this operation'})
-                        state=store.read(payload['id'])
-                        if self.path=='/api/pause':
-                            if state['status'] not in ('queued','running','reviewing','pausing','paused'):
-                                return self.reply(409,{'error':'This research run is not active'})
-                            engine.pause_requested.set();store.update(payload['id'],status='pausing')
-                            return self.reply(202,{'status':'pausing','note':'No new research stages; already-started bounded provider operations may finish'})
-                        if state['status'] not in ('pausing','paused'):
-                            return self.reply(409,{'error':'This run is not paused'})
-                        engine.pause_requested.clear();store.update(payload['id'],status='running')
-                        return self.reply(202,{'status':'running','note':'Resumed the same active research controller and saved run'})
+                        with store.lock:
+                            state=store.read(payload['id'])
+                            if self.path=='/api/pause':
+                                if state['status'] not in ('queued','running','reviewing','pausing','paused'):
+                                    return self.reply(409,{'error':'This research run is not active'})
+                                engine.pause_requested.set();store.update(payload['id'],status='pausing')
+                                return self.reply(202,{'status':'pausing','note':'No new research stages; already-started bounded provider operations may finish'})
+                            if state['status'] not in ('pausing','paused'):
+                                return self.reply(409,{'error':'This run is not paused'})
+                            engine.pause_requested.clear();store.update(payload['id'],status='running')
+                            return self.reply(202,{'status':'running','note':'Resumed the same active research controller and saved run'})
                 if self.path=='/api/cancel':
                     with lock:
                         engine=active.get(payload.get('id'))

@@ -29,6 +29,36 @@ def stable_id(key):
     return f'cn-{h[:8]}-{h[8:12]}-4{h[13:16]}-8{h[17:20]}-{h[20:32]}'
 
 
+def in_scope(entry, scope):
+    """Keep legacy v1 identities, but parse their entire typed key tail.
+
+    Scopes may contain colons. A prefix alone therefore cannot distinguish a
+    parent namespace from another configured scope. Payload kinds disambiguate
+    root identities from mission-local observations without rewriting old keys.
+    """
+    fields=entry.get('fields',{})
+    if fields.get('source')!='tmf-research':return False
+    try:payload=json.loads(entry['body'])
+    except (ValueError,KeyError,TypeError):return False
+    if not isinstance(payload,dict):return False
+    sha=r'[a-f0-9]{64}';run=r'mission:[a-f0-9]{32}'
+    patterns={
+        'source-identity':'source:'+sha, 'source':'source:'+sha+':'+sha,
+        'finding':run+':finding:'+sha, 'research-mission':run+'(?::report:'+sha+')?',
+        'company-identity':'company:'+sha,
+        'company-investigation':run+':company:'+sha, 'lead':run+':lead:'+sha,
+        'company-observation':run+':(?:company|lead):'+sha+':snapshot:'+sha,
+        'professional-knowledge':'knowledge:'+sha, 'knowledge-collection':'collection:'+sha,
+        'specialty-definition':'specialty:'+sha, 'council-configuration':'council:'+sha,
+        'market-research':run+':market:'+sha, 'person-research':run+':person:'+sha,
+    }
+    entity=payload.get('entity')
+    pattern=patterns.get(entity) if isinstance(entity,str) else None
+    if not pattern and payload.get('schema')=='tmf-research-intelligence/1' and payload.get('mission_type')=='council':
+        pattern=run+':council:'+sha
+    return bool(pattern and re.fullmatch(re.escape('tmf-research:v1:'+scope+':')+pattern,str(fields.get('sourceId',''))))
+
+
 class CanonUnavailable(ValueError):
     pass
 
@@ -94,10 +124,8 @@ class CanonConnection:
         if revision is not None and (type(revision) is not int or revision<1):raise ValueError('Use an exact positive Canon revision')
         value=self.request('/api/canon/organization/entries/'+record_id+(f'?revision={revision}' if revision else ''))
         entry=value.get('entry',{})
-        fields=entry.get('fields',{})
         if (entry.get('id')!=record_id or (revision is not None and entry.get('revision')!=revision)
-                or fields.get('source')!='tmf-research'
-                or not str(fields.get('sourceId','')).startswith('tmf-research:v1:'+self.scope+':')):
+                or not in_scope(entry,self.scope)):
             raise CanonUnavailable('Canon reference does not belong to this Research connection and namespace')
         return entry
 
@@ -139,7 +167,7 @@ class CanonConnection:
             value=self.request('/api/canon/organization/entries/'+record_id,missing_ok=True)
             if value is None:continue
             previous=value.get('entry',{});fields=previous.get('fields',{})
-            if fields.get('source')!='tmf-research' or not str(fields.get('sourceId','')).startswith(prefix):continue
+            if not in_scope(previous,self.scope):continue
             if exclude_run and str(fields['sourceId']).startswith(prefix+'mission:'+exclude_run+':'):continue
             try:
                 body=json.loads(previous['body']);item=body['intelligence']
@@ -158,10 +186,12 @@ class CanonConnection:
         fields = {'source': 'tmf-research', 'sourceId': key, 'sourceHash': digest(payload),
                   'status': 'draft', 'reviewStatus': 'candidate',
                   **({'profession':payload['profession']} if isinstance(payload.get('profession'),str) else {})}
+        if not in_scope({'body':body,'fields':fields},self.scope):
+            raise CanonUnavailable('Canon candidate key does not belong to this Research namespace and kind')
         entry = self.request('/api/canon/sections/knowledge/entries', {
             'key': key, 'type': 'knowledge', 'title': title, 'body': body, 'fields': fields, 'links': links})
         if (entry.get('id') != stable_id(key) or entry.get('fields', {}).get('sourceId') != key
-                or not isinstance(entry.get('revision'), int)):
+                or not isinstance(entry.get('revision'), int) or not in_scope(entry,self.scope)):
             raise CanonUnavailable('Canon identity receipt did not match the candidate')
         prior = entry['fields']
         unchanged = (entry.get('body') == body and prior.get('sourceHash') == digest(payload)

@@ -286,9 +286,21 @@ class ResearchEngine:
         self.execution['snapshot']={name:getattr(self,name) for name in self.SNAPSHOT_FIELDS if hasattr(self,name)}
         evidence=self.store.directory(self.run_id)/'evidence'
         self.execution['evidence']={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in evidence.glob('*') if f.is_file()}
+        self.execution['artifacts']=self.rea_artifacts(self.execution['snapshot'])
         self.execution['inflight']=None
         self.store.save(self.run_id,'execution.json',self.execution)
         return result
+    @staticmethod
+    def rea_artifacts(snapshot):
+        artifacts={}
+        for source in snapshot.get('sources',[]):
+            sid=source.get('id','')
+            if isinstance(sid,str) and re.fullmatch(r'REA[0-9]+',sid):
+                digest=source.get('artifact_sha256','')
+                if not isinstance(digest,str) or not re.fullmatch(r'[a-f0-9]{64}',digest):
+                    raise ValueError('Retained checkpoint REA evidence has no integrity digest')
+                artifacts[sid+'.json']=digest
+        return artifacts
     @staticmethod
     def resumable(store, run_id):
         """Validate before dispatch; incomplete external operations are never replayed."""
@@ -306,6 +318,18 @@ class ResearchEngine:
         for name,digest in value.get('evidence',{}).items():
             if not re.fullmatch(r'[A-Za-z0-9_.-]+',name):raise ValueError('Invalid checkpoint evidence reference')
             file=store.directory(run_id)/'evidence'/name
+            if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest()!=digest:
+                raise ValueError('Retained checkpoint evidence integrity mismatch')
+        # Older execution/1 checkpoints kept these digests on snapshot sources,
+        # but omitted root REA envelopes from evidence/. Validate them in place;
+        # never bless current bytes or rerun the inspection to fill a missing hash.
+        artifacts=dict(value.get('artifacts',{}))
+        for name,digest in ResearchEngine.rea_artifacts(value.get('snapshot',{})).items():
+            if name in artifacts and artifacts[name]!=digest:raise ValueError('Retained checkpoint evidence integrity conflict')
+            artifacts[name]=digest
+        for name,digest in artifacts.items():
+            if not re.fullmatch(r'REA[0-9]+\.json',name):raise ValueError('Invalid checkpoint artifact reference')
+            file=store.directory(run_id)/name
             if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest()!=digest:
                 raise ValueError('Retained checkpoint evidence integrity mismatch')
         return value
@@ -435,7 +459,7 @@ class ResearchEngine:
         # the operator's config, else CRAWLEE_CONFIG (the variable the bridge itself reads; MC's install sets it on the workbench)
         crawlee = self.crawlee_override or Crawlee((self.config.get('crawlee') or {}).get('connection') or os.environ.get('CRAWLEE_CONFIG'))
         self.acquisition = self.acquisition or {'provider': 'crawlee', 'crawlers': ['crawlee'], 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
-        job_site, collected = {}, set();states={};round_jobs=[]
+        job_site, collected = {}, set();states={};round_jobs=[];attempted_sites=[]
         prior_urls={s.get('url') for s in self.sources}|{s.get('requested_url') for s in self.sources}
         sites = {}
         for candidate in candidates:
@@ -453,6 +477,7 @@ class ResearchEngine:
                 if not remaining:break
                 pages=min(5,max(1,remaining//(len(selected)-index))) if lead_discovery else min(5,remaining)
                 remaining-=pages
+                attempted_sites.append(host)
                 try:
                     job = crawlee.call('crawlee_start', {'urls': urls[:pages], 'allowed_domains': list(dict.fromkeys([host]+([urlsplit(u).hostname for u in urls[:pages]] if lead_discovery else []))), 'max_pages': pages, 'max_depth': 1,
                                                          'topic': topic[:200], 'tags': [t[:60] for t in tags]})
@@ -509,7 +534,7 @@ class ResearchEngine:
                     try: self.acquisition['packs'].append({'job': job_id, 'artifacts': crawlee.call('crawlee_pack', {'job_id': job_id}).get('artifacts', [])})
                     except ProviderError as exc: self.error(f'Crawlee pack for {job_id} unavailable ({str(exc)[:120]})')
             # THE SCRAPLING PLUGIN for what Crawlee could not collect (blocked, changed layout, timed out): named, never quiet
-            blocked = [host for host in dict.fromkeys(job_site.values()) if host not in collected]
+            blocked = [host for host in attempted_sites if host not in collected]
             if blocked: self.scrapling_pass({host: sites[host] for host in blocked}, limit, directory)
         finally:
             if self.cancelled.is_set():
@@ -880,7 +905,9 @@ class ResearchEngine:
             if not plan['success_criteria']: plan['success_criteria']=[self.request['question']]
             if mission:plan['success_criteria']=list(dict.fromkeys(plan['success_criteria']+mission['completion_criteria']))
             self.store.save(run_id,'plan.json',plan)
-            self.gaps.extend('Lead scope limit: '+str(x)[:500] for x in plan.get('scope_limits',[])[:8])
+            for x in plan.get('scope_limits',[])[:8]:
+                gap='Lead scope limit: '+str(x)[:500]
+                if gap not in self.gaps:self.gaps.append(gap)
             tasks=plan.get('tasks',[])
             if not isinstance(tasks,list) or not tasks or any(not isinstance(t,dict) for t in tasks): raise ProviderError('Lead returned no valid investigation tasks')
             candidates=self.checkpoint('search:0',lambda:self.search(plan.get('queries',[])[:3]))
@@ -1144,7 +1171,13 @@ class ResearchEngine:
         self.store.save(run_id,'usage.json',{'calls':len(self.role_calls),'session_calls':getattr(self.model,'calls',None),'roles':usage,
                                            'provider_usage_complete':len(usage)==len(self.role_calls),
                                            'limits':limits,'dollar_cost':'unavailable; subscription usage and native-search costs are not a hard monetary budget'})
-        with self.store.lock:
+        while True:
+            # Waiting while holding the store would block pause's update and
+            # therefore the controller lock needed by resume/cancel.
             self.check()
-            self.store.update(run_id,status='partial' if partial else 'completed',stage='done',finished_at=timestamp(),
-                              outputs=outputs,errors=self.errors,findings=len(accepted),requirements=len(requirements))
+            with self.store.lock:
+                if self.cancelled.is_set():raise InterruptedError('Research cancelled')
+                if self.pause_requested.is_set():continue
+                self.store.update(run_id,status='partial' if partial else 'completed',stage='done',finished_at=timestamp(),
+                                  outputs=outputs,errors=self.errors,findings=len(accepted),requirements=len(requirements))
+                break

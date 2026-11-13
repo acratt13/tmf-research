@@ -128,10 +128,11 @@ class BusinessTests(unittest.TestCase):
     def test_company_history_does_not_import_a_foreign_namespace_backlink(self):
         rid=self.run_company('history-owned');first=self.publish(rid)
         identity=next(x for x in first['references'] if x['kind']=='company-identity')
-        foreign={**self.fixture.config,'canon':{**self.fixture.config['canon'],'identity_scope':'another-customer'}}
-        conn=CanonConnection(foreign)
-        conn.put('tmf-research:v1:another-customer:foreign','Private other customer observation',
-            {'entity':'company-investigation','intelligence':{'domain':'example.com','research_date':'2099-01-01','name':'Private marker'}},[{'to':identity['id'],'kind':'related'}])
+        for scope in ('another-customer',self.fixture.config['canon']['identity_scope']+':private'):
+            foreign={**self.fixture.config,'canon':{**self.fixture.config['canon'],'identity_scope':scope}}
+            conn=CanonConnection(foreign)
+            conn.put('tmf-research:v1:'+scope+':mission:'+'a'*32+':company:'+'b'*64,'Private other customer observation',
+                {'entity':'company-investigation','intelligence':{'domain':'example.com','research_date':'2099-01-01','name':'Private marker'}},[{'to':identity['id'],'kind':'related'}])
         history=CanonConnection(self.fixture.config).company_history('example.com')
         self.assertEqual(len(history['investigations']),1)
         self.assertNotIn('Private marker',json.dumps(history))

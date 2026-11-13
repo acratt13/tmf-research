@@ -164,7 +164,9 @@ def permits(mission, url):
     try: host = urlsplit(url).hostname
     except ValueError: return False
     if not host: return False
-    host = host.lower()
+    try:host = host.lower().removesuffix('.').encode('idna').decode('ascii')
+    except UnicodeError:return False
+    if host.endswith('.'):return False
     matches = lambda ds: any(host == d or host.endswith('.' + d) for d in ds)
     return not matches(mission['excluded_domains']) and (not mission['permitted_domains'] or matches(mission['permitted_domains']))
 

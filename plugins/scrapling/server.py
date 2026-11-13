@@ -79,9 +79,16 @@ class Collector:
         exclude=[] if excluded_domains is None else excluded_domains
         if any(not isinstance(values,list) or any(not isinstance(d,str) or not d or '/' in d or ':' in d for d in values) for values in (allow,exclude)):
             raise Refused('Source scope is a list of domain names')
+        try:
+            allow=[d.lower().removesuffix('.').encode('idna').decode('ascii') for d in allow]
+            exclude=[d.lower().removesuffix('.').encode('idna').decode('ascii') for d in exclude]
+        except UnicodeError:raise Refused('Source scope is a list of domain names') from None
+        if any(not d or d.endswith('.') for d in allow+exclude):raise Refused('Source scope is a list of domain names')
         scoped=bool(allow or exclude)
         def permitted(value):
-            host=(urlsplit(value).hostname or '').lower()
+            try:host=(urlsplit(value).hostname or '').lower().removesuffix('.').encode('idna').decode('ascii')
+            except (ValueError,UnicodeError):return False
+            if not host or host.endswith('.'):return False
             matches=lambda ds:any(host==d.lower() or host.endswith('.'+d.lower()) for d in ds)
             return not matches(exclude) and (not allow or matches(allow))
         if not permitted(url):raise Refused('Source URL is outside the permitted mission scope')
