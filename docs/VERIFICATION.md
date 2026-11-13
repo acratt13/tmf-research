@@ -73,3 +73,12 @@ The 0.5.2 accounting repair retains provider usage from earlier execution sessio
 
 
 Native acceptance also exposed stale terminal publication status: a builder could publish successfully while the already-open finished view still said not published. Terminal views now continue bounded polling, update the Canon receipt, and retain the existing report DOM when its contents are unchanged. A browser-script regression executes the polling and actor-side status change and asserts that expanded report content is retained.
+
+
+## Phase 3 company and lead usability — 0.6.0 source
+
+The existing mission/engine/Canon/export/UI paths now retain official-host identity evidence and supporting finding/source dates, explicit startup categories, inferred lead opportunities with separate assumptions/unknowns, prior exact company-investigation revisions and literal description comparisons. The existing read-only knowledge operation can look up a company domain; no new operation/server/store is introduced. Company/lead heads are stable per run/domain, with immutable observations and exact finding revisions. Native and synthetic cases preserve reviewed knowledge, legacy identities and original revisions; ambiguous identities are reported rather than merged.
+
+Focused tests first exposed unrelated-domain acceptance, absent startup funding categories, missing continuity and content-keyed same-run duplicates. Regressions cover those failures, source-register handoff to both model roles, source-fact versus opportunity labels, cross-namespace backlink exclusion, legacy-www reuse/ambiguity, readonly paged CLI lookup, reviewed-head protection, readable consultation exports, and the existing native Canon writer/graph across repeated company investigations. A comparison labels changed research descriptions; it does not certify real business events. Live subject acceptance and installation are recorded separately after the shared restart hold clears and resources permit.
+
+Final 0.6.0 source validation: **178 tests passed, zero skipped**, with the actual shared CLI shim and compiled native Canon writer supplied. JavaScript syntax, Python compilation and diff checks passed. This includes 19 focused business cases and the native graph/writer continuity contract. Installed subject acceptance remains separate.

@@ -35,6 +35,10 @@ const server=createServer(async(req,res)=>{
   let raw='';for await(const chunk of req)raw+=chunk;
   const answer=writeSectionEntry(db,{actor:'synthetic-research-proof',operator:req.headers.authorization==='Bearer fixture-only'},'knowledge',JSON.parse(raw));
   code=answer.status;value=answer.body;
+ }else if(req.url.startsWith('/api/canon/organization/entries/')){
+  const url=new URL(req.url,'http://fixture');const id=url.pathname.split('/').pop();
+  const entry=url.searchParams.has('revision')?db.history(id).find(e=>e.revision===Number(url.searchParams.get('revision'))):db.current(id);
+  code=entry?200:404;value={entry,backlinks:db.linksTo(id)};
  }else if(req.url==='/stats'){
   value={rows:Number(db.db.prepare('select count(*) as n from canon_entries').get().n)};
  }else if(req.url.startsWith('/entry/')){
@@ -81,6 +85,30 @@ process.on('SIGTERM',()=>server.close(()=>{db.db.close();process.exit(0)}));
                     self.assertNotEqual(second['snapshot']['id'],first['snapshot']['id'])
                     original=read('/entry/'+first['snapshot']['id'])
                     self.assertNotEqual(json.loads(original['body'])['report']['summary'],report['summary'])
+                    # The real native graph/writer also preserves one company identity
+                    # across independently created research runs and exact prior refs.
+                    from tmf_research.engine import ResearchEngine
+                    from test_missions import MissionModel
+                    from test_engine import FakeWeb
+                    company_request={'question':'What does this synthetic company establish?','depth':'quick','formats':['md','builder'],'council':False,
+                        'mission':{'schema':'tmf-research-mission/1','type':'company','target':'Synthetic Example','collection':'web'}}
+                    one=store.create(company_request,request_id='native-company-one')
+                    ResearchEngine(store,config,model=MissionModel('company'),web=FakeWeb()).execute(one)
+                    first_company=publish_candidates(store,one,config);self.assertEqual(first_company['status'],'published-candidate',first_company)
+                    two=store.create(company_request,request_id='native-company-two')
+                    ResearchEngine(store,config,model=MissionModel('company'),web=FakeWeb()).execute(two)
+                    second_company=publish_candidates(store,two,config);self.assertEqual(second_company['status'],'published-candidate',second_company)
+                    first_identity=next(x for x in first_company['references'] if x['kind']=='company-identity')
+                    second_identity=next(x for x in second_company['references'] if x['kind']=='company-identity')
+                    self.assertEqual(first_identity,second_identity)
+                    intelligence=json.loads((store.directory(two)/'intelligence.json').read_text())
+                    prior=intelligence['companies'][0]['continuity']['previous']
+                    self.assertEqual(len(prior),1)
+                    head=next(x for x in first_company['references'] if x['kind']=='company-investigation')
+                    self.assertEqual(prior[0]['reference'],{'id':head['id'],'revision':1})
+                    before=read('/stats')['rows'];self.assertEqual(publish_candidates(store,two,config),second_company)
+                    self.assertEqual(read('/stats')['rows'],before)
+
             finally:
                 process.terminate()
                 try:process.wait(timeout=5)

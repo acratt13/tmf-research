@@ -76,7 +76,7 @@ class MissionTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 request=self.request(kind,**({'public_person':True} if kind=='person' else {}))
                 store,rid,model=self.execute(kind,request=request)
-                state=store.read(rid);self.assertEqual(state['status'],'completed',state)
+                state=store.read(rid);self.assertEqual(state['status'],'partial' if kind in ('startup','leads') else 'completed',state)
                 directory=store.directory(rid)
                 value=json.loads((directory/'intelligence.json').read_text())
                 self.assertEqual(value['mission_type'],kind)
@@ -107,11 +107,12 @@ class MissionTests(unittest.TestCase):
 
     def test_duplicate_company_domains_merge_only_equivalent_evidence(self):
         value=output('leads');value['leads'].append(copy.deepcopy(value['leads'][0]))
-        mission=normalize(self.request('leads')['mission']);findings=[{'id':'F001','label':'documented'}]
-        normalized=validate_output(mission,value,findings,'a'*32,'2026-01-01T00:00:00Z')
+        mission=normalize(self.request('leads')['mission']);findings=[{'id':'F001','label':'documented','text':'Synthetic company docs','sources':['S001']}]
+        sources=[{'id':'S001','url':'https://example.com/docs','state':'available','retrieved_at':'2026-01-01T00:00:00Z'}]
+        normalized=validate_output(mission,value,findings,'a'*32,'2026-01-01T00:00:00Z',sources=sources)
         self.assertEqual(len(normalized['leads']),1)
         value['leads'][1]['opportunity']='A conflicting invented need'
-        with self.assertRaises(ValueError):validate_output(mission,value,findings,'a'*32,'2026-01-01T00:00:00Z')
+        with self.assertRaisesRegex(ValueError,'Conflicting duplicate'):validate_output(mission,value,findings,'a'*32,'2026-01-01T00:00:00Z',sources=sources)
 
     def test_private_person_consent_and_simulation_labels_are_explicit(self):
         mission={**self.request('person')['mission'],'public_person':False}

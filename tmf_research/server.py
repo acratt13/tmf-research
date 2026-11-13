@@ -37,6 +37,8 @@ def serve(root, config=None, port=8765):
             if not self.same_origin():return self.reply(403,{'error':'Loopback origin required'})
             path=urlsplit(self.path).path
             try:
+                if path.startswith('/api/companies/'):
+                    return self.reply(200,CanonConnection(config).company_history(path.rsplit('/',1)[1]))
                 if path.startswith('/api/knowledge/'):
                     query=parse_qs(urlsplit(self.path).query);revision=int(query['revision'][0]) if 'revision' in query else None
                     return self.reply(200,CanonConnection(config).read(path.rsplit('/',1)[1],revision))

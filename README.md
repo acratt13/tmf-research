@@ -110,6 +110,22 @@ Canon publication now writes company-domain identities and investigation/lead ca
 
 MC can supply the Canon configuration through its existing operator-owned plugin environment: `TMF_RESEARCH_CANON_URL`, `TMF_RESEARCH_CANON_SCOPE`, `TMF_RESEARCH_CANON_AUTH`, `TMF_RESEARCH_CANON_AUTHOR` and, for bearer mode, `TMF_RESEARCH_CANON_TOKEN_ENV` (a name). Explicit config-file values take precedence. The default bearer mode never falls back to another authority on a refusal. `auth: local-system` is an explicit configuration for Canon's existing trusted loopback system API (`serviceIdentity.ts` and `tmf.canonSections`), with author attribution; it requires no copied operator credential. It is unavailable on a backend requiring bearer authorization. No remote URL, credential discovery or new auth route is introduced.
 
+### Company and lead continuity
+
+Business intelligence now binds a company website to retained factual findings from that website, rather than accepting a model-supplied domain alone. Website case, one trailing DNS dot and the usual single `www` host variant normalize to one domain identity; this is not independent corporate-ownership verification. Sources and retrieval dates stay with the supporting findings. Lead opportunities, proposed services and fit remain inferences, with assumptions and unknowns separate from the source facts. Lead missions may supply `industry` and `geography`; the form exposes both.
+
+Company briefings retain all eleven consultation sections. Startup briefings add explicit founders/leadership, product/technology, funding, investors/accelerators, business model, partnerships, public traction, hiring/expansion and programs/opportunities sections. Missing evidence becomes an unknown section and a partial mission, not guessed funding or traction. The structured briefing is included in readable report exports and the builder pack as well as `intelligence.json`.
+
+The existing read-only operation also accepts:
+
+```sh
+python3 -m tmf_research knowledge --company example.com
+```
+
+It retrieves this connection's existing company identity and a bounded set of linked investigations, with exact Canon revisions. A new investigation uses those records to retain literal research-description comparisons. Changed wording is not proof of a changed business operation. The lookup reads at most 30 backlinks and returns up to three observations; truncation is explicit, so it does not promise a complete or globally latest history. Missing Canon configuration stays visibly unavailable. A missing company is returned as not found without creating a record.
+
+Publication reuses one company identity, including an unambiguous legacy `www` identity. Two already-distinct identities require review; they are never silently merged. Each run has a stable revisioned company/lead head plus immutable observations and exact finding-revision references. Repeat publication reuses the same candidates. Changes to one run advance its owned candidate revision; reviewed or human-edited content is protected. Previous research references are frozen in the output so publication retries do not silently change its comparison baseline. No outreach or CRM authority is added.
+
 The full-spec boundary remains explicit:
 
 | Spec phase | Source implementation / current limit |
@@ -117,7 +133,7 @@ The full-spec boundary remains explicit:
 | 0 audit | Actual module, contract and test inventory above |
 | 1 MC integration | Existing one-service overlay and dynamic view; expanded tool metadata and exact-run navigation; installed proof recorded separately |
 | 2 Canon/graph | Stable identities, revisions, typed links, candidates, exact-revision reads; arbitrary pre-existing identity merging and graph UI not implemented |
-| 3 business intelligence | Structured company/startup/lead/market missions, evidence checks and deduplication; quality on real subjects needs live evidence review |
+| 3 business intelligence | Structured company/startup/lead/market missions, evidence checks and deduplication; official-host evidence binding, explicit startup sections, qualified lead evidence and scoped prior-investigation comparison; real-subject quality needs live evidence review |
 | 4 bounded workers | Existing crawler/Council execution, budgets, durable remote job references and cancellation; no new scheduler, remote worker pause/recovery not established |
 | 5 professional knowledge | Independent sourced Canon entries and shared versioned collections; updates remain candidates |
 | 6 roles/agents | Draft expertise with shared knowledge references and evaluation requirements; actual Hub role-socket import, worker creation and evaluation not connected |

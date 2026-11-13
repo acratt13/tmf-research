@@ -29,7 +29,7 @@ class CanonFixture:
                 if query.get('revision'):
                     entry=next((r for r in fixture.history if r['id']==identity and r['revision']==int(query['revision'][0])),None)
                 if not entry:self.send_response(404);self.end_headers();return
-                value=json.dumps({'entry':entry}).encode()
+                value=json.dumps({'entry':entry,'backlinks':[{'from':e['id'],'kind':link['kind'],'origin':'written'} for e in fixture.entries.values() for link in e.get('links',[]) if link['to']==identity]}).encode()
                 self.send_response(200);self.send_header('Content-Length',str(len(value)));self.end_headers();self.wfile.write(value)
             def do_POST(self):
                 with fixture.guard:

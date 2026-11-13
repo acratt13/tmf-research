@@ -69,7 +69,7 @@ class CanonConnection:
         self.base, self.scope = base.rstrip('/'), scope
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
-    def request(self, path, payload=None):
+    def request(self, path, payload=None, missing_ok=False):
         data = encoded(payload).encode() if payload is not None else None
         request = urllib.request.Request(self.base + path, data=data, headers={
             'Content-Type': 'application/json', **self.headers})
@@ -83,7 +83,8 @@ class CanonConnection:
             # Never echo a server response that may contain credentials or source text.
             status = exc.code
             exc.close()
-            raise CanonUnavailable(f'Canon refused publication (HTTP {status}); retry after resolving the connection or revision conflict') from None
+            if missing_ok and status==404:return None
+            raise CanonUnavailable(f'Canon refused the request (HTTP {status}); retry after resolving the connection or revision conflict') from None
         except (OSError, ValueError, urllib.error.URLError):
             raise CanonUnavailable('Canon connection unavailable or response unreadable') from None
 
@@ -99,6 +100,58 @@ class CanonConnection:
                 or not str(fields.get('sourceId','')).startswith('tmf-research:v1:'+self.scope+':')):
             raise CanonUnavailable('Canon reference does not belong to this Research connection and namespace')
         return entry
+
+    def company_record(self, host):
+        from .missions import company_domain
+        host=company_domain(host);found=[]
+        # Reuse a legacy www identity as well; never manufacture a second identity
+        # or merge two already-distinct reviewed entities by convention.
+        for spelling in (host,'www.'+host):
+            key='tmf-research:v1:'+self.scope+':company:'+digest(spelling)
+            detail=self.request('/api/canon/organization/entries/'+stable_id(key),missing_ok=True)
+            if detail is None:continue
+            entry=detail.get('entry',{});fields=entry.get('fields',{})
+            payload={}
+            try:
+                payload=json.loads(entry['body'])
+                if not isinstance(payload,dict):raise ValueError('Identity is not an object')
+                matches=company_domain(payload.get('domain'))==host
+            except (ValueError,TypeError,KeyError):matches=False
+            if (entry.get('id')!=stable_id(key) or fields.get('sourceId')!=key or fields.get('source')!='tmf-research'
+                    or not isinstance(payload,dict) or payload.get('entity')!='company-identity' or not matches):
+                raise CanonUnavailable('Stored company identity conflicts with this Research namespace or domain')
+            found.append(detail)
+        if len(found)>1:raise CanonUnavailable('Multiple existing company identities require review; none were merged or replaced')
+        return found[0] if found else None
+
+    def company_history(self, host, exclude_run=None, limit=3):
+        from .missions import company_domain
+        host=company_domain(host);detail=self.company_record(host)
+        result={'status':'not-found','identity':None,'investigations':[],'truncated':False,
+                'scope':'Up to 30 linked current entries; original revisions remain in Canon'}
+        if detail is None:return result
+        entry=detail['entry'];result.update(status='available',identity={'id':entry['id'],'revision':entry['revision']})
+        links=list(dict.fromkeys(row.get('from') for row in detail.get('backlinks',[]) if isinstance(row,dict) and isinstance(row.get('from'),str)))
+        result['truncated']=len(links)>30
+        prefix='tmf-research:v1:'+self.scope+':'
+        for record_id in links[:30]:
+            if not re.fullmatch(r'cn-[a-f0-9-]{36}',record_id):continue
+            value=self.request('/api/canon/organization/entries/'+record_id,missing_ok=True)
+            if value is None:continue
+            previous=value.get('entry',{});fields=previous.get('fields',{})
+            if fields.get('source')!='tmf-research' or not str(fields.get('sourceId','')).startswith(prefix):continue
+            if exclude_run and str(fields['sourceId']).startswith(prefix+'mission:'+exclude_run+':'):continue
+            try:
+                body=json.loads(previous['body']);item=body['intelligence']
+                matches=company_domain(item['domain'])==host
+            except (ValueError,TypeError,KeyError):continue
+            if not matches or body.get('entity') not in ('company-investigation','lead'):continue
+            result['investigations'].append({'reference':{'id':previous['id'],'revision':previous['revision']},
+                'research_date':item.get('research_date'),'review_status':fields.get('reviewStatus'),'intelligence':item})
+        result['investigations'].sort(key=lambda row:(row.get('research_date') or '',row['reference']['id']),reverse=True)
+        result['truncated']=result['truncated'] or len(result['investigations'])>limit
+        result['investigations']=result['investigations'][:limit]
+        return result
 
     def put(self, key, title, payload, links):
         body = encoded(payload)
@@ -287,13 +340,23 @@ def publish_intelligence(connection, prefix, mission_key, intelligence, finding_
         if intelligence.get('verification')!='model-reviewed':
             raise CanonUnavailable('Intelligence publication requires its retained output review')
         for item in intelligence.get('companies',intelligence.get('leads',[])):
-            identity=put('company-identity',prefix+'company:'+digest(item['domain']),
-                'Company domain identity: '+item['domain'],
-                {'entity':'company-identity','domain':item['domain'],'verification':'domain-key only; identity association is candidate evidence'},[])
-            key=mission_key+':'+('lead:' if kind=='leads' else 'company:')+digest(item)
+            existing=connection.company_record(item['domain'])
+            if existing:
+                entry=existing['entry'];identity={'id':entry['id'],'revision':entry['revision']}
+                remember('company-identity',identity);refs.append({'kind':'company-identity',**identity})
+            else:
+                identity=put('company-identity',prefix+'company:'+digest(item['domain']),
+                    'Company domain identity: '+item['domain'],
+                    {'entity':'company-identity','domain':item['domain'],'verification':'domain-key only; identity association is candidate evidence'},[])
+            key=mission_key+':'+('lead:' if kind=='leads' else 'company:')+digest(item['domain'])
+            payload={'entity':'lead' if kind=='leads' else 'company-investigation','intelligence':item,
+                     'run_id':intelligence['run_id'],'finding_revisions':{i:finding_refs[i] for i in item['finding_ids']}}
+            links=[{'to':identity['id'],'kind':'related'}]+support(item['finding_ids'])
+            links += [{'to':row['reference']['id'],'kind':'learned-from'} for row in item.get('continuity',{}).get('previous',[])]
+            observation=put('company-observation',key+':snapshot:'+digest(payload),'Company observation: '+item['name'],
+                {**payload,'entity':'company-observation'},links)
             put('lead' if kind=='leads' else 'company-investigation',key,'Research candidate: '+item['name'],
-                {'entity':'lead' if kind=='leads' else 'company-investigation','intelligence':item},
-                [{'to':identity['id'],'kind':'related'}]+support(item['finding_ids']))
+                payload,links+[{'to':observation['id'],'kind':'source'}])
         if 'knowledge' in intelligence:
             value=intelligence['knowledge'];profession=value['profession']
             domain_refs=[]
@@ -321,6 +384,47 @@ def publish_intelligence(connection, prefix, mission_key, intelligence, finding_
                 {'entity':'person-research','profile':person,'status':'draft','creates_agent':False},support(ids))
             proposal(person['generic_specialty'],[profile])
     return refs
+
+
+def attach_company_continuity(intelligence, config, error=lambda message:None, check=lambda:None):
+    """Freeze exact prior revisions and literal description differences in this run.
+
+    This is a comparison of evidence-backed research, never a claim that a
+    company's operations changed merely because a model used different wording.
+    """
+    rows=intelligence.get('companies',intelligence.get('leads',[]))
+    if not rows:return
+    try:connection=CanonConnection(config)
+    except CanonUnavailable as exc:
+        for row in rows:row['continuity']={'status':'unavailable','reason':str(exc),'previous':[],'changes':[]}
+        return
+    for row in rows:
+        check()
+        try:
+            history=connection.company_history(row['domain'],exclude_run=intelligence['run_id'])
+            previous=history.pop('investigations')
+            history['previous']=[{k:p[k] for k in ('reference','research_date','review_status')} for p in previous]
+            history['changes']=[]
+            history['comparison_scope']='Literal retained research descriptions; differences do not establish independently verified business changes'
+            if previous:
+                prior=previous[0]['intelligence']
+                current_fields={**row.get('sections',{}),**row.get('startup_sections',{})}
+                prior_fields={**prior.get('sections',{}),**prior.get('startup_sections',{})}
+                if not current_fields:
+                    current_fields={key:{'text':row[key],'label':'inferred'} for key in ('industry','opportunity','potential_service','estimated_fit')}
+                    prior_fields={key:{'text':prior.get(key,''),'label':'inferred'} for key in current_fields}
+                for key,value in current_fields.items():
+                    old=prior_fields.get(key)
+                    label=value.get('label');status='unknown' if label=='unknown' else 'new' if old is None else (
+                        'unchanged' if (old.get('label'),re.sub(r'\s+',' ',old.get('text','')).strip())==
+                            (label,re.sub(r'\s+',' ',value['text']).strip()) else 'research-description-changed')
+                    history['changes'].append({'field':key,'status':status,'previous_text':old.get('text') if old else None,
+                        'previous_label':old.get('label') if old else None,'current_text':value['text'],'current_label':label,
+                        'previous_reference':previous[0]['reference']})
+            row['continuity']=history
+        except CanonUnavailable as exc:
+            row['continuity']={'status':'unavailable','reason':str(exc),'previous':[],'changes':[]}
+            error('Company continuity unavailable: '+str(exc))
 
 
 def operator_config(config=None, environment=None):

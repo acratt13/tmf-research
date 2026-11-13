@@ -99,6 +99,10 @@ def execute(args):
         if 'request_id' in request: raise ValueError('Supply the stable request id as --request-id')
         return workbench.request('/api/runs', {**request, 'request_id': args.request_id})
     if args.command=='knowledge':
+        if getattr(args,'company',None) is not None:
+            if args.revision is not None:raise ValueError('Select an exact Canon identity to read a specific revision')
+            from .missions import company_domain
+            return page(workbench.request('/api/companies/'+company_domain(args.company)),'retained-company-history',args.cursor,args.sha256)
         if not re.fullmatch(r'cn-[a-f0-9-]{36}',args.id) or (args.revision is not None and args.revision<1):raise ValueError('Use a Canon identity and positive revision')
         suffix=f'?revision={args.revision}' if args.revision else ''
         return page(workbench.request('/api/knowledge/'+args.id+suffix),'retained-knowledge',args.cursor,args.sha256)

@@ -935,16 +935,20 @@ class ResearchEngine:
         try:
             self.event('intelligence','Organizing mission outputs against the reviewed evidence.')
             raw=self.call('Mission intelligence analyst',output_instruction(mission),
-                          {'mission':mission,'findings':accepted,'unknowns':record['unknowns']})
+                          {'mission':mission,'findings':accepted,'unknowns':record['unknowns'],
+                           **({'source_register':record['sources']} if mission['type'] in ('company','startup','leads') else {})})
             self.store.save(self.run_id,'intelligence-draft.json',raw)
-            output=validate_output(mission,raw,accepted,self.run_id,timestamp())
+            output=validate_output(mission,raw,accepted,self.run_id,timestamp(),sources=record['sources'])
+            from .canon import attach_company_continuity
+            attach_company_continuity(output,self.config,self.error,self.check)
             review=self.call('Mission output evidence reviewer',
                 'Check every company identity, factual claim, inference, recommendation and specialty instruction against the supplied findings. '
                 'Return {"supported":true,"concerns":["..."]}. Refuse unsupported identity associations, invented company problems, '
                 'unfounded professional procedures, missing jurisdiction/date caveats, inferred private thoughts, claims of person identity/endorsement, '
-                'or promoted uncertain evidence. A citation resolving is not entailment. Confidence is not verification. '
+                'or promoted uncertain evidence. For leads, requested geography/industry is not evidence of a company location or qualification; unsupported matches stay unknown. A citation resolving is not entailment. Confidence is not verification. '
                 'Specialties are draft expertise only, never permissions or deployed agents. This is model review, not independent certification.',
-                {'mission':mission,'output':output,'reviewed_findings':accepted})
+                {'mission':mission,'output':output,'reviewed_findings':accepted,
+                 **({'source_register':record['sources']} if mission['type'] in ('company','startup','leads') else {})})
             self.store.save(self.run_id,'intelligence-review.json',review)
             if review.get('supported') is not True:raise ProviderError('Mission output evidence review withheld the proposed output')
             output['verification']='model-reviewed'
