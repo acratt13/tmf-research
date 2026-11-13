@@ -33,6 +33,9 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual((store.directory(rid)/'evidence/S001.body').read_bytes(),original)
         rows=json.loads((store.directory(rid)/'role-calls.json').read_text())
         self.assertTrue(any(r['status']=='interrupted' for r in rows))
+        usage=json.loads((store.directory(rid)/'usage.json').read_text())
+        self.assertEqual(usage['calls'],len(rows));self.assertGreater(usage['calls'],usage['session_calls'])
+        self.assertFalse(usage['provider_usage_complete'])
         self.assertTrue(any(e['stage']=='resume' for e in store.read(rid)['events']))
     def test_completed_review_is_not_repeated(self):
         store,rid,_=self.make_interrupted('Research coverage lead')
@@ -137,3 +140,24 @@ server.serve(sys.argv[1],port=int(sys.argv[2]))
         store.recover_interrupted();model=FakeModel();ResearchEngine(store,model=model,web=NoFetch()).execute(rid,resume=True)
         self.assertEqual(store.read(rid)['status'],'completed',store.read(rid))
         self.assertNotIn('First specialist',[r for r,_ in model.roles]);self.assertIn('Second specialist',[r for r,_ in model.roles])
+
+    def test_provider_usage_survives_recovery_without_hiding_unknown_spend(self):
+        class Metered(FakeModel):
+            def call(self,role,instruction,data,search=False):
+                result=super().call(role,instruction,data,search)
+                self.usage.append({'call':self.calls,'role':role,'usage':{'input_tokens':10,'output_tokens':2}})
+                return result
+        class CrashMetered(Metered):
+            def call(self,role,instruction,data,search=False):
+                if role=='Evidence reviewer':raise SystemExit('process lost; provider spend unknown')
+                return super().call(role,instruction,data,search)
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);store=RunStore(tmp.name)
+        rid=store.create({'question':'What does reliable intake require?','depth':'quick','council':False,'formats':['md','builder']})
+        old=CrashMetered()
+        with self.assertRaises(SystemExit):ResearchEngine(store,model=old,web=FakeWeb()).execute(rid)
+        store.recover_interrupted();new=Metered();ResearchEngine(store,model=new,web=NoFetch()).execute(rid,resume=True)
+        usage=json.loads((store.directory(rid)/'usage.json').read_text())
+        self.assertEqual(len(usage['roles']),len(old.usage)+len(new.usage))
+        self.assertEqual(len({row['session'] for row in usage['roles']}),2)
+        self.assertEqual(usage['calls'],len(usage['roles'])+1)
+        self.assertFalse(usage['provider_usage_complete'])

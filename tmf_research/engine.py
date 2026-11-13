@@ -244,7 +244,7 @@ class ResearchEngine:
         self.errors = []; self.sources = []; self.packets = []; self.findings = []; self.requirements = []
         self.gaps = []; self.reviewed = {}; self.serial = 0; self.round = 0
         self.role_calls=[];self.role_lock=threading.Lock()
-        self.call_limit=None;self.concurrency=3;self.request={};self.execution=None;self.replaying=False
+        self.call_limit=None;self.concurrency=3;self.request={};self.execution=None;self.replaying=False;self.provider_usage=[];self.provider_session=uuid.uuid4().hex
     SNAPSHOT_FIELDS = ('errors','sources','packets','findings','requirements','gaps','reviewed','serial','round','acquisition','coverage_result')
     def checkpoint(self, key, action):
         """One durable execution record in the existing run directory, not a scheduler."""
@@ -329,6 +329,7 @@ class ResearchEngine:
             with self.role_lock:
                 entry['elapsed_seconds'] = round(time.monotonic() - started, 3)
                 self.store.save(self.run_id,'role-calls.json',self.role_calls)
+                self.store.save(self.run_id,'provider-usage.json',self.provider_usage+[{'session':self.provider_session,**row} for row in getattr(self.model,'usage',[])])
                 timed_out = [{k: v for k, v in r.items() if k not in ('input', 'input_sha256', 'input_redacted')}
                              for r in self.role_calls if r['status'] == 'timed_out']
                 if timed_out: self.store.update(self.run_id, timed_out_roles=timed_out)
@@ -808,6 +809,8 @@ class ResearchEngine:
                     if name in self.SNAPSHOT_FIELDS:setattr(self,name,value)
                 path=self.store.directory(run_id)/'role-calls.json'
                 self.role_calls=json.loads(path.read_text()) if path.exists() else []
+                usage_path=self.store.directory(run_id)/'provider-usage.json'
+                self.provider_usage=json.loads(usage_path.read_text()) if usage_path.exists() else []
                 for row in self.role_calls:
                     if row['status']=='running':row.update(status='interrupted',finished_at=timestamp())
                 self.store.save(run_id,'role-calls.json',self.role_calls)
@@ -1073,7 +1076,9 @@ class ResearchEngine:
                 'sources':[{k:x[k] for k in ('id','title','url','state','artifact_sha256','crawler','fetcher') if k in x} for x in self.sources],
                 'unknowns':unknowns,'artifacts':list(outputs),'acquisition':self.acquisition or {'provider':'unavailable','jobIds':[],'sourceHashes':[]}})
         partial=bool(self.errors or (self.request.get('preset')=='pre-build' and not spec) or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
-        self.store.save(run_id,'usage.json',{'calls':getattr(self.model,'calls',None),'roles':getattr(self.model,'usage',[]),
+        usage=self.provider_usage+[{'session':self.provider_session,**row} for row in getattr(self.model,'usage',[])]
+        self.store.save(run_id,'usage.json',{'calls':len(self.role_calls),'session_calls':getattr(self.model,'calls',None),'roles':usage,
+                                           'provider_usage_complete':len(usage)==len(self.role_calls),
                                            'limits':limits,'dollar_cost':'unavailable; subscription usage and native-search costs are not a hard monetary budget'})
         with self.store.lock:
             self.check()
