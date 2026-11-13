@@ -413,6 +413,10 @@ def attach_company_continuity(intelligence, config, error=lambda message:None, c
                 if not current_fields:
                     current_fields={key:{'text':row[key],'label':'inferred'} for key in ('industry','opportunity','potential_service','estimated_fit')}
                     prior_fields={key:{'text':prior.get(key,''),'label':'inferred'} for key in current_fields}
+                    for item,fields in ((row,current_fields),(prior,prior_fields)):
+                        fields.update({key:item[key] for key in ('industry_evidence','location','opportunity_basis') if isinstance(item.get(key),dict)})
+                        for key,fit in item.get('scope_fit',{}).items():
+                            fields['scope_'+key]={'text':fit['status']+': '+fit['reason'],'label':fit['label']}
                 for key,value in current_fields.items():
                     old=prior_fields.get(key)
                     label=value.get('label');status='unknown' if label=='unknown' else 'new' if old is None else (

@@ -128,3 +128,19 @@ class LeadTests(unittest.TestCase):
         engine.sources=[{**self.sources[0],'url':'https://example.com/about'}]
         engine.fetch([{'url':'https://www.example.com/about#menu'},{'url':'https://second.test/about'}],2)
         self.assertEqual([s['url'] for s in engine.sources],['https://example.com/about','https://second.test/about'])
+    def test_repeat_lead_comparison_keeps_previous_geographic_evidence(self):
+        from unittest.mock import patch
+        from tmf_research.canon import attach_company_continuity
+        current=self.validate([self.row()]);previous=copy.deepcopy(current['leads'][0])
+        previous['location']['text']='A previously retained different public service area.'
+        ref={'id':'cn-'+'b'*8+'-'+ 'b'*4+'-'+ 'b'*4+'-'+ 'b'*4+'-'+ 'b'*12,'revision':2}
+        history={'status':'available','identity':None,'truncated':False,'scope':'Fixture linked history',
+                 'investigations':[{'reference':ref,'research_date':'2026-01-01T00:00:00Z','review_status':'candidate','intelligence':previous}]}
+        with patch('tmf_research.canon.CanonConnection') as connection:
+            connection.return_value.company_history.return_value=history
+            attach_company_continuity(current,{})
+        changes={x['field']:x for x in current['leads'][0]['continuity']['changes']}
+        self.assertIn('location',changes)
+        self.assertEqual(changes['location']['previous_reference'],ref)
+        self.assertEqual(changes['location']['previous_text'],previous['location']['text'])
+        self.assertEqual(changes['location']['status'],'research-description-changed')
