@@ -109,6 +109,31 @@ process.on('SIGTERM',()=>server.close(()=>{db.db.close();process.exit(0)}));
                     before=read('/stats')['rows'];self.assertEqual(publish_candidates(store,two,config),second_company)
                     self.assertEqual(read('/stats')['rows'],before)
 
+                    # Professional roles use the same native Canon entries and
+                    # exact revisions; exporting/retrying creates no new store.
+                    profession=store.create({'question':'What does the synthetic profession establish?',
+                        'depth':'quick','formats':['md'],'council':False,
+                        'mission':{'schema':'tmf-research-mission/1','type':'profession',
+                                   'target':'Synthetic operations','collection':'web'}},request_id='native-role')
+                    ResearchEngine(store,config,model=MissionModel('profession'),web=FakeWeb()).execute(profession)
+                    role_receipt=publish_candidates(store,profession,config)
+                    self.assertEqual(role_receipt['status'],'published-candidate',role_receipt)
+                    self.assertEqual(role_receipt['role_plugin']['status'],'available',role_receipt)
+                    count=read('/stats')['rows']
+                    self.assertEqual(publish_candidates(store,profession,config),role_receipt)
+                    self.assertEqual(read('/stats')['rows'],count)
+                    import zipfile
+                    with zipfile.ZipFile(store.directory(profession)/'outputs'/role_receipt['role_plugin']['file']) as package:
+                        role=json.loads(package.read('role.json'))
+                    from tmf_research.canon import CanonConnection
+                    connection=CanonConnection(config)
+                    for ref in role['definition']['knowledge_references']:
+                        collection=json.loads(connection.read(ref['id'],ref['revision'])['body'])
+                        self.assertEqual(collection['entity'],'knowledge-collection')
+                        for member in collection['knowledge_references']:
+                            knowledge=json.loads(connection.read(member['id'],member['revision'])['body'])
+                            self.assertEqual(knowledge['entity'],'professional-knowledge')
+
             finally:
                 process.terminate()
                 try:process.wait(timeout=5)

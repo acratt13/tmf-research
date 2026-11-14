@@ -136,6 +136,10 @@ It retrieves this connection's existing company identity and a bounded set of li
 
 Publication reuses one company identity, including an unambiguous legacy `www` identity. Two already-distinct identities require review; they are never silently merged. Each run has a stable revisioned company/lead head plus immutable observations and exact finding-revision references. Repeat publication reuses the same candidates. Changes to one run advance its owned candidate revision; reviewed or human-edited content is protected. Previous research references are frozen in the output so publication retries do not silently change its comparison baseline. No outreach or CRM authority is added.
 
+Professional-role packages (0.8.0 source): publishing a profession mission now produces a **Role plugin (.zip)** download through the existing outputs list. The `result` publication receipt includes `canon.role_plugin` with the package identity, version, source specialty revision, filename and SHA-256. A failed package export stays visibly unavailable while successful Canon publication is retained; retrying publication repairs the export without duplicating its knowledge or mission records.
+
+The archive contains the ordinary `tmf-plugin.json`, a `skills/<id>/SKILL.md`, and a `role.json` specialty definition with provenance. It references the exact Canon collection and knowledge revisions rather than copying their bodies. It requests the existing Research knowledge tool; the receiving worker still needs its normal authorized connection to that tool. It has no runtime, permissions, secret references, worker identity or automatic install/assignment. Source role revisions retain the plugin ID and advance the version; distinct Canon specialty identities remain distinct packages. Candidate expertise remains draft. This proves package generation and compatibility with existing MC skills, not completion of the planned Hub Role sections or live worker acceptance.
+
 The full-spec boundary remains explicit:
 
 | Spec phase | Source implementation / current limit |
@@ -146,7 +150,7 @@ The full-spec boundary remains explicit:
 | 3 business intelligence | Structured company/startup/lead/market missions, evidence checks and deduplication; official-host evidence binding, explicit startup sections, qualified lead evidence and scoped prior-investigation comparison; real-subject quality needs live evidence review |
 | 4 bounded workers | Existing crawler/Council execution, budgets, durable remote job references and cancellation; no new scheduler, remote worker pause/recovery not established |
 | 5 professional knowledge | Independent sourced Canon entries and shared versioned collections; updates remain candidates |
-| 6 roles/agents | Draft expertise with shared knowledge references and evaluation requirements; actual Hub role-socket import, worker creation and evaluation not connected |
+| 6 roles/agents | Published profession specialties export reusable MC skill plugins with exact Canon references; native importer/shared-reader fixtures pass. Actual Hub role-socket assignment, live worker use, worker creation and evaluation remain unconnected |
 | 7 councils | Custom responsibilities on the existing Council with saved reusable configurations; no automatic agent deployment |
 | 8 persons | Labeled public-professional research and generic expertise drafts; private-person consent required; no voice/personality runtime or deployed simulation |
 | 9 distributed scale | Not implemented; existing authorized runtime/worker contracts must be used |

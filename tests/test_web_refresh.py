@@ -13,16 +13,16 @@ class Node {
  replaceChildren(...nodes){this.childNodes=nodes} insertBefore(node,before){const i=this.childNodes.indexOf(before);this.childNodes.splice(i<0?this.childNodes.length:i,0,node)}
  setAttribute(){} addEventListener(){} querySelectorAll(){return []} scrollIntoView(){} focus(){}
 }
-const nodes=new Map(),timers=new Map();let next=0,published=false;
+const nodes=new Map(),timers=new Map();let next=0,published=false;const roleFile='role-plugin-'+'c'.repeat(64)+'.zip';
 const rid='a'.repeat(32),get=id=>{if(!nodes.has(id))nodes.set(id,new Node());return nodes.get(id)};
 const settings={token:'fixture-only',missions:{schema:'tmf-research-mission/1',types:{}},council_specialists:{},default_council:[],lenses:{},formats:[],inspections:[]};
-const result=()=>({report:{title:'Saved research',summary:'Reviewed evidence',sources:[],findings:[],requirements:[],unknowns:[]},analysis:{sections:[],coverage:{criteria:[]}},canon:published?{status:'published-candidate',mission:{id:'cn-fixture',revision:1}}:{status:'not-published'}});
+const result=()=>({report:{title:'Saved research',summary:'Reviewed evidence',sources:[],findings:[],requirements:[],unknowns:[]},analysis:{sections:[],coverage:{criteria:[]}},canon:published?{status:'published-candidate',mission:{id:'cn-fixture',revision:1},role_plugin:{status:'available'}}:{status:'not-published'}});
 const context=vm.createContext({document:{getElementById:get,createElement:tag=>new Node(tag),createTextNode:text=>({text}),body:{classList:{add(){}}}},localStorage:{getItem(){return null},setItem(){}},location:{search:'?run='+rid},URLSearchParams,URL,console,
  setTimeout(fn){const id=++next;timers.set(id,fn);return id},clearTimeout(id){timers.delete(id)},
- fetch:async path=>({ok:true,json:async()=>path==='/api/config'?settings:path==='/api/runs'?[]:path==='/api/runs/'+rid?{status:'partial',stage:'done',question:'Question',lenses:[],outputs:[],errors:[],events:[]}:result()})});
+ fetch:async path=>({ok:true,json:async()=>path==='/api/config'?settings:path==='/api/runs'?[]:path==='/api/runs/'+rid?{status:'partial',stage:'done',question:'Question',lenses:[],outputs:published?[roleFile]:[],errors:[],events:[]}:result()})});
 vm.runInContext(fs.readFileSync('tmf_research/web/app.js','utf8'),context);
 const settle=async()=>{for(let i=0;i<12;i++)await new Promise(setImmediate)};
-(async()=>{await settle();assert.equal(get('canon-status').textContent,'Canon: not-published');const article=get('result').childNodes[0];assert.ok(article);assert.ok(timers.size,'finished missions must keep observing actor-side publication');published=true;const [id,fn]=timers.entries().next().value;timers.delete(id);await fn();await settle();assert.match(get('canon-status').textContent,/published-candidate.*revision 1/);assert.equal(get('result').childNodes[0],article,'Canon refresh must preserve expanded report DOM');assert.ok(timers.size);})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{await settle();assert.equal(get('canon-status').textContent,'Canon: not-published');const article=get('result').childNodes[0];assert.ok(article);assert.ok(timers.size,'finished missions must keep observing actor-side publication');published=true;const [id,fn]=timers.entries().next().value;timers.delete(id);await fn();await settle();assert.match(get('canon-status').textContent,/published-candidate.*revision 1/);assert.match(get('canon-status').textContent,/Role package: available/);assert.equal(get('outputs').childNodes[0].textContent,'Role plugin (.zip)');assert.ok(get('outputs').childNodes[0].href.endsWith(roleFile));assert.equal(get('result').childNodes[0],article,'Canon refresh must preserve expanded report DOM');assert.ok(timers.size);})().catch(e=>{console.error(e);process.exitCode=1});
 '''
         result=subprocess.run(['node','-e',program],text=True,capture_output=True,timeout=10)
         self.assertEqual(result.returncode,0,result.stderr)

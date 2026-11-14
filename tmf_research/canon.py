@@ -305,7 +305,9 @@ def publish_candidates(store, run_id, config, check=lambda: None):
         payload = {'entity': 'research-mission', 'run_id': run_id, 'research_status': state['status'],
                    'report_sha256': digest(report), 'report': report, 'source_revisions': sources,
                    'finding_revisions': findings, **({'intelligence_references':intelligence_refs} if intelligence_refs else {}), 'verification': 'candidate; no independent certification',
-                   'output_references': [{'run_id': run_id, 'name': name} for name in state.get('outputs', [])]}
+                   # Derived role packages are not new evidence on publish retries.
+                   'output_references': [{'run_id': run_id, 'name': name} for name in state.get('outputs', [])
+                                         if not re.fullmatch(r'role-plugin-[a-f0-9]{64}\.zip', name)]}
         links = [{'to': r['id'], 'kind': 'source'} for r in sources.values()]
         links += [{'to': r['id'], 'kind': 'related'} for r in findings+intelligence_refs]
         # Preserve an immutable report snapshot as well as the mission's revisioned head.
@@ -313,6 +315,14 @@ def publish_candidates(store, run_id, config, check=lambda: None):
         mission = connection.put(mission_key, 'Research mission candidate: ' + report['title'], payload,
                                  links + [{'to': snapshot['id'], 'kind': 'source'}])
         receipt.update(status='published-candidate', mission=mission, snapshot=snapshot)
+        if intelligence_path.exists() and intelligence.get('mission_type') == 'profession':
+            from .role_plugins import export_role_plugin
+            try:
+                source = next(ref for ref in intelligence_refs if ref['kind'] == 'specialty')
+                receipt['role_plugin'] = export_role_plugin(store, run_id, connection, source, check)
+            except (CanonUnavailable, ValueError, OSError, StopIteration):
+                receipt['role_plugin'] = {'status': 'unavailable',
+                    'reason': 'Role package export failed; Canon publication retained. Check exact knowledge references and output storage, then retry publish.'}
     except CanonUnavailable as exc:
         receipt.update(status='partial' if receipt['references'] else 'unavailable', reason=str(exc))
     except InterruptedError:
