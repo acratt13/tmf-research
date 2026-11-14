@@ -45,15 +45,21 @@ Test one realistic task per pack. Record the retrieved passages, answer or actio
 
 ## Council and knowledge-pack testing
 
-The research form has an optional Council section. Choose up to four perspectives
+The research form has an optional Council section. Choose up to six perspectives
 and optionally allow up to two lead-selected domain specialists. The versioned
 brief retains `council_members` and `council_auto_experts`; `council.json` records
 those choices and the perspectives actually returned. The Council receives the
-investigation's reviewed findings, requirements and unresolved questions. It does
-not yet retrieve profession-specific packs or activate MC agents.
+investigation's reviewed findings, requirements and unresolved questions. It can also run explicitly configured mission specialists through the same loop. It does not activate MC agents.
 
 Keep the next integration measurable: select a real role and pack version, run
 representative retrieval questions, retain returned passage IDs and citations,
 and record missing or stale knowledge before attaching the pack to that role.
 The existing MC knowledge owners remain authoritative. Do not use a production
 deposit endpoint as draft staging when it immediately publishes shared knowledge.
+
+
+## Research mission knowledge integration (source expansion)
+
+Versioned profession missions now organize model-reviewed findings into independently referenceable Canon Knowledge candidates, tagged by profession. A collection references those exact knowledge revisions. A draft specialty references the collection instead of copying it or changing a worker’s identity/authority. The `knowledge` tool reads the same scoped Canon revision for different callers; a mission’s `knowledge_refs` can retrieve those revisions as evidence before planning. Original source, revision, label, caveat and model-review limits remain visible. This is not an approved operational pack or a proof of Hub role-socket deployment.
+
+Person research separately labels documented work and interpreted communication patterns, identifies the result as simulation research rather than the person, and produces a generic expertise draft referencing the same evidence. Private-person research requires documented consent. No voice replication or new personality runtime is added.

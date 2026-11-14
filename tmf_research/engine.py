@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import uuid
 
 from .cli import dump, validate, REA_OPERATIONS
+from .missions import normalize as mission_input, permits, output_instruction, validate_output, lead_source_candidates, company_domain
 from .providers import CodexModel, Crawlee, PublicWeb, ProviderError, ScraplingPlugin
 from .processes import bounded_run, retained_diagnostic
 
@@ -66,6 +67,7 @@ DEFAULT_COUNCIL = ['customer', 'systems', 'business', 'challenger']
 
 def council_roles(request, experts):
     selected = [COUNCIL_SPECIALISTS[key] for key in request['council_members']]
+    selected += [(s['name'], s['responsibilities']) for s in request.get('mission', {}).get('specialists', [])]
     if request['council_auto_experts']:
         selected += [(str(x.get('role', 'Domain specialist'))[:80],
                       str(x.get('lens', 'Subject-specific gaps'))[:300])
@@ -112,6 +114,7 @@ def workstream(value):
 
 def brief(value):
     if not isinstance(value, dict): raise ValueError('Research brief must be an object')
+    mission = mission_input(value.get('mission'))
     preset = value.get('preset')
     if preset is not None:
         if preset != 'pre-build': raise ValueError('Unknown research preset')
@@ -120,7 +123,7 @@ def brief(value):
         value = {**value, **fixed, 'council': value.get('council', True), 'workstream': workstream(value.get('workstream'))}
         references = [x for x in value['workstream']['references'] if re.fullmatch(r'https://\S{1,1990}', x)]
         value['urls'] = list(dict.fromkeys(list(value.get('urls', [])) + references))[:12]
-    question = value.get('question', '')
+    question = value.get('question', ('Research '+mission['type']+': '+mission['target']) if mission else '')
     if not isinstance(question,str):raise ValueError('Research question must be text')
     question=question.strip()
     if not 10 <= len(question) <= 3000: raise ValueError('Describe a research question in 10–3000 characters')
@@ -143,19 +146,21 @@ def brief(value):
     documents = value.get('documents', [])
     if not isinstance(documents, list) or len(documents)>12 or any(not isinstance(x,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',x) for x in documents):
         raise ValueError('Select at most 12 configured document names')
+    if mission and mission['type']=='council' and value.get('council') is False:raise ValueError('A Council mission must run its Council')
     if not isinstance(value.get('council',True),bool):raise ValueError('Challenge round must be true or false')
-    members = value.get('council_members', DEFAULT_COUNCIL)
+    members = value.get('council_members', [] if mission and mission['specialists'] else DEFAULT_COUNCIL)
     if (not isinstance(members, list) or len(members) > 6
             or any(not isinstance(x, str) or x not in COUNCIL_SPECIALISTS for x in members)):
         raise ValueError('Select up to six known Council specialists')
-    auto_experts = value.get('council_auto_experts', True)
+    auto_experts = value.get('council_auto_experts', not bool(mission and mission['specialists']))
     if not isinstance(auto_experts, bool):raise ValueError('Automatic domain specialists must be true or false')
-    if value.get('council', True) and not members and not auto_experts:
+    if value.get('council', True) and not members and not auto_experts and not (mission and mission['specialists']):
         raise ValueError('Choose a Council specialist or enable automatic domain specialists')
     return dict(question=question, context=context, lenses=lenses, formats=formats, depth=depth,
                 council_members=list(dict.fromkeys(members)), council_auto_experts=auto_experts,
                 council=bool(value.get('council', True)), urls=list(dict.fromkeys(urls)), inspections=inspections, documents=list(dict.fromkeys(documents)),
                 **({'preset': preset, 'workstream': value['workstream']} if preset else {}),
+                **({'mission':mission} if mission else {}),
                 privacy='Your question, context, retrieved public passages, selected local documents and excerpts from selected local REA artifacts are sent to the model provider. Select only material you intend to share. Local run records remain on this machine.')
 
 
@@ -216,9 +221,9 @@ class RunStore:
         for file in self.root.glob('*/state.json'):
             try:
                 state = json.loads(file.read_text())
-                if state['status'] in ('queued', 'running', 'reviewing', 'cancelling'):
+                if state['status'] in ('queued', 'running', 'reviewing', 'cancelling', 'pausing', 'paused'):
                     self.update(state['id'], status='interrupted', stage='interrupted',
-                                errors=state.get('errors', []) + ['Process restarted. Evidence retained; no automatic replay. Start a new run.'])
+                                errors=state.get('errors', []) + ['Process restarted. Evidence retained; no automatic replay. Eligible runs can resume from saved checkpoints.'])
             except (ValueError, KeyError, OSError): continue
 
 
@@ -230,27 +235,138 @@ def retain_role_value(entry, key, value):
     entry[key + '_redacted'] = json.dumps(saved, ensure_ascii=False) != raw
 
 
+def execution_observation(run_id, sources, calls, usage, limits, rounds):
+    """Controller/provider observations, separate from model-authored business facts."""
+    measured=[row['web_search_calls'] for row in usage if type(row.get('web_search_calls')) is int and row['web_search_calls']>=0]
+    return {'schema':'tmf-research-execution-evidence/1','run_id':run_id,'observed_at':timestamp(),
+        'sources':[{k:source[k] for k in ('id','url','final_url','state','retrieved_at','artifact_sha256','canon') if k in source} for source in sources],
+        'model_calls_attempted_so_far':len(calls),'model_call_limit':limits.get('calls'),
+        'analysis_concurrency':limits.get('concurrency'),'follow_up_rounds_so_far':rounds,
+        'discovery':{'search_enabled_calls_returned':sum(row.get('search_enabled') is True and row.get('status')=='returned' for row in calls),
+            'native_web_search_calls_observed':sum(measured) if measured else None,
+            'provider_usage_complete':len(usage)==len(calls) and len(measured)==len(usage)},
+        'scope':'Observed before this stage; not final execution totals or independent business verification. Missing provider accounting stays unknown.'}
+
+
 class ResearchEngine:
     def __init__(self, store, config=None, model=None, web=None, crawlee=None):
-        self.store, self.config, self.model_override = store, config or {}, model
-        self.web = web or PublicWeb(); self.crawlee_override = crawlee; self.acquisition = None; self.scrapling_factory = None
-        self.cancelled = threading.Event()
+        from .canon import operator_config
+        self.store, self.config, self.model_override = store, operator_config(config), model
+        self.web = web or PublicWeb(permitted=lambda url:permits(self.request.get("mission"),url)); self.crawlee_override = crawlee; self.acquisition = None; self.scrapling_factory = None
+        self.cancelled = threading.Event();self.pause_requested=threading.Event()
         self.errors = []; self.sources = []; self.packets = []; self.findings = []; self.requirements = []
         self.gaps = []; self.reviewed = {}; self.serial = 0; self.round = 0
         self.role_calls=[];self.role_lock=threading.Lock()
+        self.call_limit=None;self.concurrency=3;self.request={};self.execution=None;self.replaying=False;self.provider_usage=[];self.provider_session=uuid.uuid4().hex
+    def execution_context(self, stage):
+        # Freeze per-stage input so recovery can replay the exact returned model call.
+        path=self.store.directory(self.run_id)/(stage+'-execution.json')
+        if path.exists():return json.loads(path.read_text())
+        usage=self.provider_usage+[{'session':self.provider_session,**row} for row in getattr(self.model,'usage',[])]
+        limits={**getattr(self,'execution_limits',{}),'calls':self.call_limit,'concurrency':self.concurrency}
+        receipt=execution_observation(self.run_id,self.sources,self.role_calls,usage,limits,self.round)
+        if getattr(self,'origin_execution',None):
+            receipt['origin']=self.origin_execution
+            receipt['collection_mode']='Retained-evidence revision; no new source acquisition'
+        self.store.save(self.run_id,path.name,receipt)
+        return receipt
+    def evidence_context(self, stage='publication'):
+        if self.request.get('mission',{}).get('type') not in ('company','startup','leads'):return {}
+        return {'execution_evidence':getattr(self,'publication_execution',None) or self.execution_context(stage)}
+    SNAPSHOT_FIELDS = ('errors','sources','packets','findings','requirements','gaps','reviewed','serial','round','acquisition','coverage_result')
+    def checkpoint(self, key, action):
+        """One durable execution record in the existing run directory, not a scheduler."""
+        if self.execution is None:return action()
+        saved=self.execution['completed'].get(key)
+        if saved is not None:return saved['result']
+        self.execution['inflight']=key
+        self.store.save(self.run_id,'execution.json',self.execution)
+        result=action()
+        self.execution['completed'][key]={'result':result}
+        self.execution['snapshot']={name:getattr(self,name) for name in self.SNAPSHOT_FIELDS if hasattr(self,name)}
+        evidence=self.store.directory(self.run_id)/'evidence'
+        self.execution['evidence']={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in evidence.glob('*') if f.is_file()}
+        self.execution['artifacts']=self.rea_artifacts(self.execution['snapshot'])
+        self.execution['inflight']=None
+        self.store.save(self.run_id,'execution.json',self.execution)
+        return result
+    @staticmethod
+    def rea_artifacts(snapshot):
+        artifacts={}
+        for source in snapshot.get('sources',[]):
+            sid=source.get('id','')
+            if isinstance(sid,str) and re.fullmatch(r'REA[0-9]+',sid):
+                digest=source.get('artifact_sha256','')
+                if not isinstance(digest,str) or not re.fullmatch(r'[a-f0-9]{64}',digest):
+                    raise ValueError('Retained checkpoint REA evidence has no integrity digest')
+                artifacts[sid+'.json']=digest
+        return artifacts
+    @staticmethod
+    def resumable(store, run_id):
+        """Validate before dispatch; incomplete external operations are never replayed."""
+        if store.read(run_id)['status']!='interrupted':raise ValueError('Only an interrupted saved mission can restart from checkpoints')
+        path=store.directory(run_id)/'execution.json'
+        if not path.exists():raise ValueError('This older run has no durable execution checkpoint')
+        value=json.loads(path.read_text())
+        request=json.loads((store.directory(run_id)/'brief.json').read_text())
+        digest=hashlib.sha256(json.dumps(request,sort_keys=True).encode()).hexdigest()
+        if value.get('schema')!='tmf-research-execution/1' or value.get('brief_sha256')!=digest:
+            raise ValueError('Saved mission checkpoint does not match its brief')
+        key=value.get('inflight') or ''
+        if key in ('collect','inspect','documents','publish') or key.startswith('collect:'):
+            raise ValueError('The external collection, inspection or export stage was interrupted; its retained evidence needs recovery before it can resume')
+        for name,digest in value.get('evidence',{}).items():
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+',name):raise ValueError('Invalid checkpoint evidence reference')
+            file=store.directory(run_id)/'evidence'/name
+            if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest()!=digest:
+                raise ValueError('Retained checkpoint evidence integrity mismatch')
+        # Older execution/1 checkpoints kept these digests on snapshot sources,
+        # but omitted root REA envelopes from evidence/. Validate them in place;
+        # never bless current bytes or rerun the inspection to fill a missing hash.
+        artifacts=dict(value.get('artifacts',{}))
+        for name,digest in ResearchEngine.rea_artifacts(value.get('snapshot',{})).items():
+            if name in artifacts and artifacts[name]!=digest:raise ValueError('Retained checkpoint evidence integrity conflict')
+            artifacts[name]=digest
+        for name,digest in artifacts.items():
+            if not re.fullmatch(r'REA[0-9]+\.json',name):raise ValueError('Invalid checkpoint artifact reference')
+            file=store.directory(run_id)/name
+            if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest()!=digest:
+                raise ValueError('Retained checkpoint evidence integrity mismatch')
+        return value
     def check(self):
         if self.cancelled.is_set(): raise InterruptedError('Research cancelled')
+        while self.pause_requested.is_set():
+            with self.role_lock:
+                running=any(r.get('status')=='running' for r in self.role_calls)
+            status='pausing' if running else 'paused'
+            if self.store.read(self.run_id)['status']!=status:self.store.update(self.run_id,status=status)
+            if self.cancelled.wait(.1):raise InterruptedError('Research cancelled')
     def call(self, role, task, data, search=False):
         self.check()
+        mission=self.request.get('mission')
+        if mission and mission['type'] in ('company','startup','leads'):
+            # Planning and coverage must see the same output contract as the writer.
+            data={**data,'mission_output_contract':output_instruction(mission)}
+            task+=' Controller execution_evidence and source retrieval timestamps are operational provenance, not business findings. Reconcile role-local notes against these observed receipts: a specialist not searching does not mean the mission did not search. Do not invent missing metadata or treat an unmet future stage as a completed result.'
         if isinstance(data,dict) and isinstance(data.get('evidence'),list):
             # Keep later rounds bounded as the source ledger grows.
             packets=data['evidence'];per_source=min(16000,100000//max(1,len(packets)))
             query=json.dumps({'brief':data.get('brief',{}),'task':data.get('task',{})},ensure_ascii=False)
             data={**data,'evidence':[{**p,'text':source_passages(p['text'],query,per_source)} for p in packets]}
-        entry={'id':uuid.uuid4().hex,'role':role,'started_at':timestamp(),'status':'running','search_enabled':search}
+        request_sha256=hashlib.sha256(json.dumps(dict(role=role,instruction=task,data=data,search=search),sort_keys=True).encode()).hexdigest()
+        if self.replaying:
+            with self.role_lock:
+                prior=next((r for r in self.role_calls if r.get('request_sha256')==request_sha256 and r.get('status')=='returned'),None)
+                if prior:
+                    if prior.get('output_redacted') or 'output' not in prior:raise ProviderError('A redacted retained model result cannot be replayed as exact evidence')
+                    raw=json.dumps(prior['output'],ensure_ascii=False)
+                    if hashlib.sha256(raw.encode()).hexdigest()!=prior['output_sha256']:raise ProviderError('Retained model result integrity mismatch')
+                    return json.loads(raw)
+        entry={'request_sha256':request_sha256,'id':uuid.uuid4().hex,'role':role,'started_at':timestamp(),'status':'running','search_enabled':search}
         retain_role_value(entry, 'input', dict(role=role, instruction=task, data=data, search=search))
         started = time.monotonic()
         with self.role_lock:
+            if self.call_limit is not None and len(self.role_calls)>=self.call_limit: raise ProviderError('Mission model-call budget exhausted; retained results were not replayed')
             self.role_calls.append(entry);self.store.save(self.run_id,'role-calls.json',self.role_calls)
         try:
             result = self.model.call(role, task, data, search=search)
@@ -270,6 +386,7 @@ class ResearchEngine:
             with self.role_lock:
                 entry['elapsed_seconds'] = round(time.monotonic() - started, 3)
                 self.store.save(self.run_id,'role-calls.json',self.role_calls)
+                self.store.save(self.run_id,'provider-usage.json',self.provider_usage+[{'session':self.provider_session,**row} for row in getattr(self.model,'usage',[])])
                 timed_out = [{k: v for k, v in r.items() if k not in ('input', 'input_sha256', 'input_redacted')}
                              for r in self.role_calls if r['status'] == 'timed_out']
                 if timed_out: self.store.update(self.run_id, timed_out_roles=timed_out)
@@ -278,14 +395,28 @@ class ResearchEngine:
     def event(self, stage, text): self.store.event(self.run_id, stage, text)
     def error(self, message):
         self.errors.append(message); self.store.update(self.run_id, errors=self.errors)
+    def budgeted_source_count(self):
+        return sum(bool(s.get('url')) or s.get('kind')=='native-knowledge' for s in self.sources)
+
     def search(self, queries):
+        if ((self.request.get('mission') or {}).get('role_knowledge') and
+                (not queries or self.budgeted_source_count()>=self.execution_limits['sources'])):
+            self.event('search','Using retained knowledge; no external source search requested or source budget remaining.')
+            self.store.save(self.run_id,f'search-{self.round}.json',{'sources':[],
+                'limitations':['External source search not run: no query or source budget remaining.']})
+            return []
         self.event('search', 'Source scout is searching for primary sources; search results are leads only.')
+        lead_discovery=(self.request.get('mission') or {}).get('type')=='leads'
+        preference=('For lead discovery, find distinct public businesses in the requested industry and geographic market. '
+                    'Prefer official business about, location/service-area and product/service pages, including useful public workflow evidence. '
+                    'Interleave businesses so one website does not consume the source budget. Directory results can guide discovery, '
+                    'but retain official-site evidence for identity and scope; do not collect personal profiles or contact lists. ') if lead_discovery else (
+                    'Prefer directly readable official documentation or official Markdown/static equivalents when a previous URL failed. '
+                    'If the reference is an application shell, seek official SDK documentation, schemas or examples, labeling their version/scope limits. ')
         result = self.call('Source scout', 'Use native web search for these bounded queries. Prefer official primary sources. '
                            'Return {"sources":[{"url":"https://...","title":"...","access":"readable|unverified|unavailable"}],"limitations":["..."]}. '
                            'At most 8 relevant sources. Order for breadth: interleave the distinct questions and vendors; '
-                           'do not spend the shortlist on one subtopic. Prefer directly readable official documentation or '
-                           'official Markdown/static equivalents when a previous URL failed. If the reference is an application shell, '
-                           'seek official SDK documentation, schemas or examples, labeling their version/scope limits. '
+                           'do not spend the shortlist on one subtopic. '+preference+
                            'Mark pages you opened but could not read as unavailable; do not displace readable sources with known shells. '
                            'Search snippets are leads, not evidence.',
                            {'queries': queries,'brief':self.request,'unavailable_urls':[s['url'] for s in self.sources if s['state']=='unavailable' and s.get('url')]}, search=True)
@@ -295,11 +426,15 @@ class ResearchEngine:
         usable=[x for x in candidates[:8] if isinstance(x, dict) and isinstance(x.get('url'), str) and x.get('access')!='unavailable']
         return sorted(usable,key=lambda x:x.get('access')!='readable')
     def fetch(self, candidates, limit):
+        if (self.request.get('mission') or {}).get('type')=='leads':
+            candidates=lead_source_candidates(candidates,(s.get(k) for s in self.sources for k in ('url','requested_url','final_url')))
         seen = {s.get('url') for s in self.sources}
         for candidate in candidates:
             self.check()
-            if len([s for s in self.sources if s.get('url')]) >= limit: break
+            if self.budgeted_source_count() >= limit: break
             url = candidate['url']
+            if not permits(self.request.get('mission'),url):
+                self.gaps.append('Source excluded by mission scope: '+url);continue
             if url in seen: continue
             seen.add(url); sid = f'S{len(self.sources)+1:03}'
             self.event('fetch', f'Retrieving and retaining source {sid}.')
@@ -308,6 +443,7 @@ class ResearchEngine:
                       'limitations': 'No authenticated vendor operation or runtime behavior tested.'}
             try:
                 result = self.web.fetch(url)
+                if not permits(self.request.get('mission'),result['url']):raise ProviderError('Redirect left the permitted mission scope')
                 if len(result['text'].strip()) < 100: raise ProviderError('Page has too little readable content')
                 source.update(state='partial' if result['truncated'] else 'available', artifact_sha256=result['sha256'])
                 source.update(requested_url=url,final_url=result['url'],content_type=result['content_type'],
@@ -327,28 +463,39 @@ class ResearchEngine:
         """PRE-BUILD INGRESS: a parallel Crawlee swarm on the installed remote worker. One bounded job per site (the worker
         runs two at once and queues up to eight), polled to a terminal state, each source read back hash-checked and packed.
         Never a silent fallback to the public-web fetcher: no Crawlee means no pre-build evidence."""
+        lead_discovery=(self.request.get('mission') or {}).get('type')=='leads'
+        if lead_discovery:candidates=lead_source_candidates(candidates,(s.get(k) for s in self.sources for k in ('url','requested_url','final_url')))
         # the operator's config, else CRAWLEE_CONFIG (the variable the bridge itself reads; MC's install sets it on the workbench)
         crawlee = self.crawlee_override or Crawlee((self.config.get('crawlee') or {}).get('connection') or os.environ.get('CRAWLEE_CONFIG'))
-        self.acquisition = {'provider': 'crawlee', 'crawlers': ['crawlee'], 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
-        job_site, collected = {}, set()
+        self.acquisition = self.acquisition or {'provider': 'crawlee', 'crawlers': ['crawlee'], 'jobIds': [], 'sourceHashes': [], 'jobs': [], 'packs': []}
+        job_site, collected = {}, set();states={};round_jobs=[];attempted_sites=[]
+        prior_urls={s.get('url') for s in self.sources}|{s.get('requested_url') for s in self.sources}
         sites = {}
         for candidate in candidates:
             url = candidate.get('url') if isinstance(candidate, dict) else None
             host = urlsplit(url).hostname if isinstance(url, str) and url.startswith('https://') else None
-            if host and len(sites.setdefault(host, [])) < 5 and url not in sites[host]: sites[host].append(url)
+            if host and lead_discovery:host=company_domain(host)
+            if host and url not in prior_urls and permits(self.request.get('mission'),url) and len(sites.setdefault(host, [])) < 5 and url not in sites[host]: sites[host].append(url)
         topic = (self.request.get('workstream') or {}).get('goal') or self.request['question']
         tags = ['pre-build'] + ([self.request['workstream']['id']] if self.request.get('workstream', {}).get('id') else [])
         try:
-            for host, urls in list(sites.items())[:8]:
+            remaining=max(0,limit-self.budgeted_source_count())
+            selected=list(sites.items())[:8]
+            for index,(host, urls) in enumerate(selected):
                 self.check()
+                if not remaining:break
+                pages=min(5,max(1,remaining//(len(selected)-index))) if lead_discovery else min(5,remaining)
+                remaining-=pages
+                attempted_sites.append(host)
                 try:
-                    job = crawlee.call('crawlee_start', {'urls': urls, 'allowed_domains': [host], 'max_pages': 5, 'max_depth': 1,
+                    job = crawlee.call('crawlee_start', {'urls': urls[:pages], 'allowed_domains': list(dict.fromkeys([host]+([urlsplit(u).hostname for u in urls[:pages]] if lead_discovery else []))), 'max_pages': pages, 'max_depth': 1,
                                                          'topic': topic[:200], 'tags': [t[:60] for t in tags]})
-                    self.acquisition['jobIds'].append(job['id']); job_site[job['id']] = host
+                    self.acquisition['jobIds'].append(job['id']);round_jobs.append(job['id']); job_site[job['id']] = host
+                    self.store.save(self.run_id,'acquisition.json',self.acquisition)
                 except (ProviderError, KeyError, TypeError) as exc:
                     self.acquisition['jobs'].append({'site': host, 'status': 'not started', 'reason': str(exc)[:300]}); self.error(f'Crawlee job for {host} not started')
-            self.event('swarm', f'Crawlee swarm: {len(self.acquisition["jobIds"])} job(s) across {len(sites)} site(s).')
-            pending, end = list(self.acquisition['jobIds']), time.monotonic() + deadline
+            self.event('swarm', f'Crawlee swarm: {len(round_jobs)} job(s) across {len(sites)} site(s).')
+            pending, end = list(round_jobs), time.monotonic() + deadline
             states = {}
             while pending and time.monotonic() < end:
                 self.check()
@@ -365,7 +512,7 @@ class ResearchEngine:
             for job_id, state in states.items():
                 self.acquisition['jobs'].append({'id': job_id, 'status': state.get('status'), **({'reason': str(state['reason'])[:300]} if state.get('reason') else {})})
                 for item in state.get('sources', []):
-                    if len([x for x in self.sources if x.get('url')]) >= limit: break
+                    if self.budgeted_source_count() >= limit: break
                     sid = f'S{len(self.sources)+1:03}'
                     source = {'id': sid, 'title': str(item.get('title') or item.get('url'))[:200], 'url': item.get('final_url') or item.get('url'),
                               'crawler': 'crawlee', 'retrieved_at': item.get('retrieved_at') or timestamp(), 'scope': f'Crawlee swarm job {job_id}, source {item.get("id")}.',
@@ -378,9 +525,15 @@ class ResearchEngine:
                             text, digest = str(read.get('text', '')), str(read.get('source', {}).get('text_sha256', ''))
                             if len(text.strip()) < 100: raise ProviderError('Source has too little readable content')
                             partial = read.get('end', len(text)) < read.get('total_characters', len(text))
+                            retained_hash=hashlib.sha256(text.encode()).hexdigest()
+                            if not partial and retained_hash != digest:raise ProviderError('Crawlee text does not match its source hash')
+                            if not permits(self.request.get('mission'),source['url']):raise ProviderError('Crawler result left mission scope')
+                            source['upstream_text_sha256']=digest
+                            digest=retained_hash
                             source.update(state='partial' if partial else 'available', artifact_sha256=digest, crawlee={'job': job_id, 'source': item['id']})
                             if partial: source['limitations'] += ' Read the first 20000 characters of the saved text.'
                             (directory / (sid + '.txt')).write_text(text)
+                            (directory / (sid + '.body')).write_bytes(text.encode())
                             self.packets.append({'id': sid, 'title': source['title'], 'url': source['url'], 'text': text, 'state': source['state']})
                             self.acquisition['sourceHashes'].append(digest); collected.add(job_site.get(job_id))
                         except (ProviderError, KeyError, TypeError, ValueError) as exc:
@@ -390,9 +543,17 @@ class ResearchEngine:
                     try: self.acquisition['packs'].append({'job': job_id, 'artifacts': crawlee.call('crawlee_pack', {'job_id': job_id}).get('artifacts', [])})
                     except ProviderError as exc: self.error(f'Crawlee pack for {job_id} unavailable ({str(exc)[:120]})')
             # THE SCRAPLING PLUGIN for what Crawlee could not collect (blocked, changed layout, timed out): named, never quiet
-            blocked = [host for host in list(sites)[:8] if host not in collected]
+            blocked = [host for host in attempted_sites if host not in collected]
             if blocked: self.scrapling_pass({host: sites[host] for host in blocked}, limit, directory)
         finally:
+            if self.cancelled.is_set():
+                for job_id in round_jobs:
+                    if states.get(job_id,{}).get('status') in ('completed','partial','failed','cancelled'):continue
+                    try:
+                        crawlee.call('crawlee_cancel',{'job_id':job_id})
+                        self.acquisition['jobs'].append({'id':job_id,'status':'cancel-requested'})
+                    except ProviderError:
+                        self.acquisition['jobs'].append({'id':job_id,'status':'cancellation-unconfirmed'})
             if not self.crawlee_override: crawlee.close()
             self.store.save(self.run_id, 'sources.json', self.sources)
             self.store.save(self.run_id, 'acquisition.json', self.acquisition)
@@ -401,6 +562,8 @@ class ResearchEngine:
         parallel, each source hash-checked into the same evidence review; an unavailable plugin is said once, by name."""
         self.event('swarm', f'Scrapling plugin: collecting {len(sites)} site(s) the Crawlee worker could not ({", ".join(sites)}).')
         record = {'sites': list(sites), 'fetched': 0, 'failed': 0}; self.acquisition['scrapling'] = record
+        remaining=max(0,limit-self.budgeted_source_count())
+        if not remaining:return
         make = self.scrapling_factory or (lambda: ScraplingPlugin(**((self.config.get('crawlers') or {}).get('scrapling') or {})))
         probe = make()
         try: record['version'] = probe.call('scrapling_status', {}).get('version')
@@ -408,7 +571,7 @@ class ResearchEngine:
             record['unavailable'] = str(exc)[:300]; self.error(f'Scrapling plugin unavailable for {len(sites)} site(s): {str(exc)[:160]}')
             probe.close(); return
         if 'scrapling' not in self.acquisition['crawlers']: self.acquisition['crawlers'].append('scrapling')
-        urls = [u for host_urls in sites.values() for u in host_urls[:3]]
+        urls = [u for host_urls in sites.values() for u in host_urls[:3]][:remaining]
         clients = [probe] + [make() for _ in range(min(2, max(0, len(urls) - 1)))]
         results = {}
         try:
@@ -416,26 +579,31 @@ class ResearchEngine:
                 chunks = [urls[i::len(clients)] for i in range(len(clients))]
                 def run(client, chunk):
                     for url in chunk:
-                        try: results[url] = client.call('scrapling_fetch', {'url': url})
+                        try:
+                            mission=self.request.get('mission') or {}
+                            scope={key:mission[key] for key in ('permitted_domains','excluded_domains') if mission.get(key)}
+                            results[url] = client.call('scrapling_fetch', {'url': url, **scope})
                         except ProviderError as exc: results[url] = exc
                 for future in as_completed([pool.submit(run, c, ch) for c, ch in zip(clients, chunks)]): future.result()
         finally:
             for client in clients: client.close()
         for url in urls:
             self.check()
-            if len([x for x in self.sources if x.get('url')]) >= limit: break
+            if self.budgeted_source_count() >= limit: break
             got, sid = results.get(url, ProviderError('not collected')), f'S{len(self.sources)+1:03}'
             source = {'id': sid, 'title': url[:200], 'url': url, 'crawler': 'scrapling', 'retrieved_at': timestamp(),
                       'scope': 'Scrapling plugin, for a site the Crawlee worker could not collect.',
                       'limitations': 'Untrusted reference text collected by the Scrapling plugin. No runtime behavior tested.'}
             text = got.get('text', '') if isinstance(got, dict) else ''
-            if isinstance(got, Exception) or hashlib.sha256(text.encode()).hexdigest() != got.get('text_sha256'):
+            if isinstance(got,dict) and not permits(self.request.get('mission'),got.get('final_url') or url):got=ProviderError('Scrapling result left mission scope')
+            if isinstance(got, Exception) or len(text.strip())<100 or hashlib.sha256(text.encode()).hexdigest() != got.get('text_sha256'):
                 reason = str(got)[:200] if isinstance(got, Exception) else 'text does not match its hash'
                 source.update(state='unavailable', limitations=f'Scrapling could not collect it ({reason}); no claim support.'); record['failed'] += 1
             else:
                 source.update(state='available', url=got.get('final_url') or url, requested_url=url, artifact_sha256=got['text_sha256'],
                               fetcher=got.get('fetcher'), retrieved_at=got.get('retrieved_at') or source['retrieved_at'])
                 (directory / (sid + '.txt')).write_text(text)
+                (directory / (sid + '.body')).write_bytes(text.encode())
                 self.packets.append({'id': sid, 'title': source['title'], 'url': source['url'], 'text': text, 'state': 'available'})
                 self.acquisition['sourceHashes'].append(got['text_sha256']); record['fetched'] += 1
             self.sources.append(source)
@@ -551,7 +719,7 @@ class ResearchEngine:
                        'Separate documented source behavior from proposed TMF controls or inferred business conclusions. '
                        'Quote only one short passage per finding; do not copy whole paragraphs.')
         results = []
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
             futures = {pool.submit(self.call, t.get('role', 'Research specialist'), instruction,
                                     {'brief': self.request, 'task': t, 'evidence': self.packets}): t for t in tasks[:3]}
             for future in as_completed(futures):
@@ -645,7 +813,7 @@ class ResearchEngine:
             'Customer interviews and private runtime tests cannot be resolved by web search; keep them explicit, '
             'but pursue answerable official documentation questions. Use failed URLs to seek readable official alternatives. '
             'Coverage is a model assessment, not factual certification. Do not mark answered without reviewed finding IDs.',
-            {'brief':self.request,'success_criteria':plan['success_criteria'],'findings':self.accepted(),
+            {'brief':self.request,'success_criteria':plan['success_criteria'],'findings':self.accepted(),**self.evidence_context('coverage-'+str(self.round)),
              'council':json.loads(council.read_text()) if council.exists() else None,
              'objections':queries,'sources':self.sources,'requirements':self.requirements,'accepted_analysis':analysis})
         rows={}
@@ -673,7 +841,7 @@ class ResearchEngine:
                 'Keep under 200 words. These are simulated advisory perspectives, not real experts or factual evidence. '
                 'Challenge unsupported claims and identify one consequential omission. Confidence is subjective, not a probability of correctness.')
         positions=[]
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
             futures={pool.submit(self.call,role,task,dict(data,lens=lens)):role for role,lens in roles}
             for future in as_completed(futures):
                 role=futures[future]
@@ -685,57 +853,136 @@ class ResearchEngine:
                         'automatic_domain_specialists':self.request['council_auto_experts'], 'positions':positions})
         self.gaps.extend('Council evidence request: '+str(gap)[:500] for p in positions for gap in p.get('evidence_needed',[])[:2])
         return list(dict.fromkeys(str(q) for p in positions for q in p.get('follow_up_queries',[])[:1]))[:2]
-    def execute(self, run_id):
+    def knowledge(self, references):
+        if not references:return
+        from .canon import CanonConnection, CanonUnavailable
+        try:
+            connection=CanonConnection(self.config)
+            for reference in references:
+                self.check();entry=connection.read(reference['id'],reference['revision'])
+                text=entry['body'];sid=f'S{len(self.sources)+1:03}'
+                digest=hashlib.sha256(text.encode()).hexdigest()
+                directory=self.store.directory(self.run_id)/'evidence';directory.mkdir(exist_ok=True)
+                (directory/(sid+'.body')).write_bytes(text.encode());(directory/(sid+'.txt')).write_text(text)
+                source={'id':sid,'title':entry['title'],'kind':'canon-knowledge','state':'available',
+                    'canon':reference,'retrieved_at':timestamp(),'artifact_sha256':digest,
+                    'scope':f'Canon {reference["id"]} revision {reference["revision"]}',
+                    'limitations':'Retained Research knowledge; its original evidence/review limits remain. A candidate is not approved guidance.'}
+                self.sources.append(source);self.packets.append({'id':sid,'title':entry['title'],'text':text,'state':'available'})
+                self.store.save(self.run_id,'sources.json',self.sources)
+        except CanonUnavailable as exc:raise ProviderError(str(exc)) from None
+
+    def role_knowledge(self, requested):
+        if not requested:return
+        from .role_knowledge import resolve_role_knowledge
+        # Native passages count toward the same source budget as other evidence.
+        remaining=max(0,self.execution_limits['sources']-len(self.sources))
+        selection=resolve_role_knowledge(requested[:remaining],self.config,self.check)
+        selection['gaps'] += [{'doc_id':r['doc_id'],'content_hash':r['content_hash'],
+            'reason':'source_budget_exceeded','research_query':r['purpose']} for r in requested[remaining:]]
+        selection['status']='partial' if selection['gaps'] else 'complete'
+        selection['captured_at']=timestamp()
+        directory=self.store.directory(self.run_id)/'evidence';directory.mkdir(exist_ok=True)
+        (directory/'role-knowledge.json').write_text(json.dumps(selection,ensure_ascii=False,sort_keys=True))
+        self.gaps.extend('Native knowledge gap: '+g['reason']+'; '+g['research_query'] for g in selection['gaps'])
+        for native in selection['sources']:
+            self.check();sid=f'S{len(self.sources)+1:03}'
+            text='\n\n'.join(c['text'] for c in native['chunks']);digest=hashlib.sha256(text.encode()).hexdigest()
+            directory=self.store.directory(self.run_id)/'evidence';directory.mkdir(exist_ok=True)
+            (directory/(sid+'.body')).write_bytes(text.encode());(directory/(sid+'.txt')).write_text(text)
+            provenance={k:v for k,v in native.items() if k!='chunks'}
+            provenance['chunk_refs']=[{k:v for k,v in c.items() if k!='text'} for c in native['chunks']]
+            self.sources.append({'id':sid,'title':native['title'],'kind':'native-knowledge','state':'available',
+                'native_knowledge':provenance,'retrieved_at':timestamp(),'artifact_sha256':digest,
+                'scope':'Selected native knowledge chunks for: '+native['purpose'],
+                'limitations':'Captured indexed knowledge, not independent verification or an approved rule. Currentness: '+native['source_currentness']['state']})
+            self.packets.append({'id':sid,'title':native['title'],'text':text,'state':'available'})
+        self.store.save(self.run_id,'sources.json',self.sources)
+
+    def execute(self, run_id, resume=False):
         self.run_id=run_id; self.request=json.loads((self.store.directory(run_id)/'brief.json').read_text())
         limits={**DEPTHS[self.request['depth']], **(PRESETS.get(self.request.get('preset'), {}).get('limits') or {})}
+        mission=self.request.get('mission')
+        if mission:
+            if mission['type'] not in ('general','technology','council'):limits['calls']+=2
+            limits.update(mission['budgets'])
+            self.concurrency=limits.get('concurrency',3)
+        self.call_limit=limits['calls'];self.execution_limits=limits
         try:
+            if resume:
+                self.execution=self.resumable(self.store,run_id);self.replaying=True
+                for name,value in self.execution.get('snapshot',{}).items():
+                    if name in self.SNAPSHOT_FIELDS:setattr(self,name,value)
+                path=self.store.directory(run_id)/'role-calls.json'
+                self.role_calls=json.loads(path.read_text()) if path.exists() else []
+                usage_path=self.store.directory(run_id)/'provider-usage.json'
+                self.provider_usage=json.loads(usage_path.read_text()) if usage_path.exists() else []
+                for row in self.role_calls:
+                    if row['status']=='running':row.update(status='interrupted',finished_at=timestamp())
+                self.store.save(run_id,'role-calls.json',self.role_calls)
+                self.event('resume','Resuming the saved controller checkpoint. Completed stages and matching retained model results are reused; incomplete model calls consume the existing budget and may be retried.')
+            else:
+                self.execution={'schema':'tmf-research-execution/1','brief_sha256':hashlib.sha256(json.dumps(self.request,sort_keys=True).encode()).hexdigest(),'completed':{},'snapshot':{},'evidence':{},'inflight':None}
+                self.store.save(run_id,'execution.json',self.execution)
             self.model=self.model_override or CodexModel(self.config.get('codex','codex'), max_calls=limits['calls'])
             self.store.update(run_id,status='running')
+            if mission:self.checkpoint('knowledge',lambda:self.knowledge(mission['knowledge_refs']))
+            if mission and mission.get('role_knowledge'):
+                self.checkpoint('role-knowledge',lambda:self.role_knowledge(mission['role_knowledge']))
             self.event('plan','Research lead is decomposing the selected lenses into bounded investigations.')
-            plan=self.call('Research lead', 'Plan the investigation. Return {"queries":["..."],'
+            plan=self.checkpoint('plan',lambda:self.call('Research lead', 'Plan the investigation. Return {"queries":["..."],'
                            '"tasks":[{"role":"...","question":"..."}],"experts":[{"role":"...","lens":"..."}],'
                            '"success_criteria":["..."],"scope_limits":["..."]}. At most 3 queries, 3 tasks and 2 domain experts. '
                            'Cover every selected lens in the three tasks. First map the relevant scope and relationships, '
                            'then allocate complementary investigations. Broad requests need the shared foundation before narrow examples; '
                            'focused requests should stay focused. Adapt to supplied context rather than assuming one organization or domain. '
-                           'Experts are functional perspectives, not invented credentials.',
-                           {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']}})
+                           'Experts are functional perspectives, not invented credentials. '
+                           'Reuse supplied knowledge first. When it covers the goal, return queries:[]. '
+                           'For missing or outdated knowledge, name the gap and propose only scoped queries within the mission domains and budget.',
+                           {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']},
+                            **({'knowledge_gaps':self.gaps} if self.gaps else {}),
+                            **({'evidence':self.packets} if self.packets else {})}))
             criteria=plan.get('success_criteria',[])
             plan['success_criteria']=[str(c)[:1000] for c in criteria[:8] if isinstance(c,str) and c.strip()] if isinstance(criteria,list) else []
             if not plan['success_criteria']: plan['success_criteria']=[self.request['question']]
+            if mission:plan['success_criteria']=list(dict.fromkeys(plan['success_criteria']+mission['completion_criteria']))
             self.store.save(run_id,'plan.json',plan)
-            self.gaps.extend('Lead scope limit: '+str(x)[:500] for x in plan.get('scope_limits',[])[:8])
+            for x in plan.get('scope_limits',[])[:8]:
+                gap='Lead scope limit: '+str(x)[:500]
+                if gap not in self.gaps:self.gaps.append(gap)
             tasks=plan.get('tasks',[])
             if not isinstance(tasks,list) or not tasks or any(not isinstance(t,dict) for t in tasks): raise ProviderError('Lead returned no valid investigation tasks')
-            candidates=self.search(plan.get('queries',[])[:3])
+            candidates=self.checkpoint('search:0',lambda:self.search(plan.get('queries',[])[:3]))
             seed=[{'url':u,'title':u} for u in self.request['urls']]
             # Reserve two web slots for material follow-up in non-quick runs.
-            if self.request.get('preset') == 'pre-build': self.swarm(seed+candidates, limits['sources'])
-            else: self.fetch(seed+candidates, limits['sources']-(2 if limits['rounds'] else 0))
-            self.inspect(self.request['inspections'])
-            self.documents(self.request.get('documents',[]))
+            if self.request.get('preset') == 'pre-build' or (mission and mission['collection']=='plugins'): self.checkpoint('collect',lambda:self.swarm(seed+candidates, limits['sources']))
+            else: self.checkpoint('collect',lambda:self.fetch(seed+candidates, limits['sources']-(min(2,max(0,limits['sources']-1)) if limits['rounds'] else 0)))
+            self.checkpoint('inspect',lambda:self.inspect(self.request['inspections']))
+            self.checkpoint('documents',lambda:self.documents(self.request.get('documents',[])))
             if not self.packets: raise ProviderError('No readable evidence acquired; research cannot proceed')
-            self.investigate(tasks)
-            follow=self.review() or []
-            positions_queries=self.council(plan.get('experts',[])) if self.request['council'] else []
-            queries=self.coverage(plan,follow+positions_queries)
+            self.checkpoint('investigate:0',lambda:self.investigate(tasks))
+            follow=self.checkpoint('review:0',self.review) or []
+            positions_queries=self.checkpoint('council',lambda:self.council(plan.get('experts',[]))) if self.request['council'] else []
+            queries=self.checkpoint('coverage:0',lambda:self.coverage(plan,follow+positions_queries))
             for n in range(limits['rounds']):
                 if not queries: break
                 self.round=n+1
                 self.event('follow-up','Lead is investigating material objections before final synthesis.')
-                before=len(self.packets)
-                self.fetch(self.search(queries),limits['sources'])
+                before=self.checkpoint(f'before:{n+1}',lambda:len(self.packets))
+                follow_sources=self.checkpoint(f'search:{n+1}',lambda:self.search(queries))
+                if mission and mission['collection']=='plugins':self.checkpoint(f'collect:{n+1}',lambda:self.swarm(follow_sources,limits['sources']))
+                else:self.checkpoint(f'collect:{n+1}',lambda:self.fetch(follow_sources,limits['sources']))
                 if len(self.packets)==before:
                     self.gaps.append('Follow-up acquired no new readable evidence within the source budget.'); break
-                self.investigate([{'role':'Follow-up investigator','question':'Resolve these objections: '+'; '.join(queries)}])
-                review_queries=self.review() or []
-                queries=self.coverage(plan,review_queries)
+                self.checkpoint(f'investigate:{n+1}',lambda:self.investigate([{'role':'Follow-up investigator','question':'Resolve these objections: '+'; '.join(queries)}]))
+                review_queries=self.checkpoint(f'review:{n+1}',self.review) or []
+                queries=self.checkpoint(f'coverage:{n+1}',lambda:self.coverage(plan,review_queries))
             accepted=self.accepted()
             self.gaps.extend('Coverage '+c['status']+': '+c['question']+' — '+c['reason'] for c in self.coverage_result['criteria'] if c['status']!='answered')
             self.gaps.extend('Unresolved follow-up query: '+str(q) for q in queries)
             self.store.save(run_id,'claims.json',self.findings)
             if not accepted: raise ProviderError('No findings survived evidence review')
-            self.publish(plan,accepted,limits,queries)
+            self.checkpoint('publish',lambda:self.publish(plan,accepted,limits,queries))
         except InterruptedError:
             self.store.update(run_id,status='cancelled',stage='cancelled',finished_at=timestamp(),errors=self.errors)
         except Exception as exc:
@@ -762,6 +1009,17 @@ class ResearchEngine:
             self.sources=record['sources'];self.findings=bundle['claims'];self.requirements=record['requirements']
             self.gaps=[g for g in record.get('research_log',record['unknowns']) if not g.startswith('Coverage ')]
             self.coverage_result=bundle['analysis'].get('coverage',{'criteria':[]})
+            self.origin_execution=bundle.get('execution_evidence')
+            if not isinstance(self.origin_execution,dict):
+                try:
+                    parent_calls=json.loads((parent/'role-calls.json').read_text())
+                    parent_usage=json.loads((parent/'usage.json').read_text())
+                    saved_execution=json.loads((parent/'execution.json').read_text()) if (parent/'execution.json').exists() else {}
+                    self.origin_execution=execution_observation(parent_id,self.sources,parent_calls,parent_usage['roles'],parent_usage['limits'],saved_execution.get('snapshot',{}).get('round'))
+                    self.origin_execution['receipt_basis']='Existing parent execution/source ledgers; legacy builder bundle did not embed this receipt'
+                except (OSError,ValueError,KeyError,TypeError):
+                    self.origin_execution={'run_id':parent_id,'status':'unavailable','scope':'Original execution accounting unavailable; do not infer discovery or spend'}
+
             plan=bundle['plan'];plan.setdefault('success_criteria',[record['question']])
             for key in ('plan','claims','council'):
                 if key in bundle:self.store.save(run_id,key+'.json',bundle[key])
@@ -769,16 +1027,24 @@ class ResearchEngine:
             evidence=directory/'evidence';evidence.mkdir()
             for source in self.sources:
                 if source['state']=='unavailable':continue
-                retained_text=source.get('url') or source.get('kind')=='local-document'
+                retained_text=source.get('url') or source.get('kind') in ('local-document','canon-knowledge','native-knowledge')
                 original=parent/'evidence'/(source['id']+'.body') if retained_text else parent/(source['id']+'.json')
                 if hashlib.sha256(original.read_bytes()).hexdigest()!=source['artifact_sha256']: raise ProviderError('Parent source integrity mismatch')
                 shutil.copyfile(original,evidence/original.name if retained_text else directory/original.name)
                 if retained_text:shutil.copyfile(parent/'evidence'/(source['id']+'.txt'),evidence/(source['id']+'.txt'))
-            self.store.save(run_id,'revision.json',{'parent_id':parent_id,'parent_report_sha256':report_hash,'feedback':feedback,
-                'scope':'Retained-evidence synthesis revision; original retrieval times preserved; no source acquisition or automatic replay'})
+            revision={'parent_id':parent_id,'parent_report_sha256':report_hash,'feedback':feedback,
+                'scope':'Retained-evidence synthesis revision; original retrieval times preserved; no source acquisition or automatic replay'}
+            if self.request.get('mission',{}).get('role_knowledge'):
+                from .role_knowledge import retained_selection
+                native=retained_selection(self.store,parent_id)
+                raw=json.dumps(native,ensure_ascii=False,sort_keys=True).encode()
+                (evidence/'role-knowledge.json').write_bytes(raw)
+                revision['native_knowledge_sha256']=hashlib.sha256(raw).hexdigest()
+            self.store.save(run_id,'revision.json',revision)
             self.errors=['Retained source '+s['id']+' is unavailable' for s in self.sources if s['state']=='unavailable']
-            limits={'sources':0,'rounds':0,'calls':4}
-            self.model=self.model_override or CodexModel(self.config.get('codex','codex'),max_calls=4)
+            limits={'sources':0,'rounds':0,'calls':4+(2 if self.request.get('mission',{}).get('type') not in (None,'general','technology','council') else 0)}
+            self.call_limit=limits['calls'];self.execution_limits=limits;self.concurrency=self.request.get('mission',{}).get('budgets',{}).get('concurrency',self.concurrency)
+            self.model=self.model_override or CodexModel(self.config.get('codex','codex'),max_calls=limits['calls'])
             self.store.update(run_id,status='running',parent_id=parent_id)
             self.publish(plan,self.accepted(),limits,[])
         except InterruptedError:
@@ -787,7 +1053,55 @@ class ResearchEngine:
             detail=str(exc)[:200] if isinstance(exc,ProviderError) else type(exc).__name__
             self.store.update(run_id,status='failed',stage='failed',errors=['Revision stopped: '+detail])
 
+    def mission_output(self, record, accepted):
+        mission=self.request['mission']
+        if mission['type'] in ('general','technology'):return
+        if mission['type']=='council':
+            council=self.store.directory(self.run_id)/'council.json'
+            if not council.exists():
+                self.error('Council mission produced no Council record');return
+            self.store.save(self.run_id,'intelligence.json',{'schema':'tmf-research-intelligence/1',
+                'run_id':self.run_id,'mission_type':'council','review_status':'candidate',
+                'independent_verification':False,'verification':'simulated-perspectives',
+                'configuration':mission['specialists'],'council':json.loads(council.read_text())})
+            return
+        try:
+            self.event('intelligence','Organizing mission outputs against the reviewed evidence.')
+            raw=self.call('Mission intelligence analyst',output_instruction(mission),
+                          {'mission':mission,'findings':accepted,'unknowns':record['unknowns'],**self.evidence_context(),
+                           **({'source_register':record['sources']} if mission['type'] in ('company','startup','leads') else {})})
+            self.store.save(self.run_id,'intelligence-draft.json',raw)
+            output=validate_output(mission,raw,accepted,self.run_id,timestamp(),sources=record['sources'])
+            from .canon import attach_company_continuity
+            attach_company_continuity(output,self.config,self.error,self.check)
+            review=self.call('Mission output evidence reviewer',
+                'Check every company identity, factual claim, inference, recommendation and specialty instruction against the supplied findings. '
+                'Return {"supported":true,"concerns":["..."]}. Refuse unsupported identity associations, invented company problems, '
+                'unfounded professional procedures, missing jurisdiction/date caveats, inferred private thoughts, claims of person identity/endorsement, '
+                'or promoted uncertain evidence. For leads, inspect each scope_fit reason and cited industry/location evidence for this specific company, including the actual requested geographic area. Broad region overlap does not prove a city match. Proposed opportunities must explain relevance from cited business facts without invented needs. Requested geography/industry is not evidence of a company location or qualification; unsupported matches stay unknown. A citation resolving is not entailment. Confidence is not verification. '
+                'canon_continuity is scoped Canon-adapter provenance, not a business claim requiring finding citations; check it against the supplied metadata rather than inventing absent history. Specialties are draft expertise only, never permissions or deployed agents. This is model review, not independent certification.',
+                {'mission':mission,'output':output,'reviewed_findings':accepted,**self.evidence_context(),
+                 'canon_continuity':{row['domain']:row.get('continuity') for row in output.get('companies',output.get('leads',[]))},
+                 **({'source_register':record['sources']} if mission['type'] in ('company','startup','leads') else {})})
+            self.store.save(self.run_id,'intelligence-review.json',review)
+            if review.get('supported') is not True:raise ProviderError('Mission output evidence review withheld the proposed output')
+            output['verification']='model-reviewed'
+            if mission['type']=='leads' and not output['leads']:self.error('No source-backed lead candidates were retained; inspect discovery limitations')
+            def unknowns(value):
+                if isinstance(value,dict):
+                    if value.get('label')=='unknown':self.error('Mission section remains unknown: '+str(value.get('heading') or value.get('text') or value.get('reason'))[:160])
+                    for child in value.values():unknowns(child)
+                elif isinstance(value,list):
+                    for child in value:unknowns(child)
+            unknowns(output)
+            source_map={s['id']:s for s in record['sources']}
+            output['evidence']={f['id']:{'finding':f,'sources':[source_map[sid] for sid in f['sources']]} for f in accepted}
+            self.store.save(self.run_id,'intelligence.json',output)
+        except (ProviderError,ValueError,KeyError,TypeError) as exc:
+            self.error('Mission output withheld: '+str(exc)[:200])
+
     def publish(self, plan, accepted, limits, queries):
+        if self.request.get('mission',{}).get('type') in ('company','startup','leads'):self.publication_execution=self.execution_context('publication')
         run_id=self.run_id
         self.event('synthesize','Writer is assembling the blueprint from reviewed findings and explicit unknowns.')
         council_file=self.store.directory(run_id)/'council.json'
@@ -820,7 +1134,7 @@ class ResearchEngine:
                             'Return at most six consolidated unknowns that materially change a decision; for each state the affected decision and '
                             'the smallest check that resolves it. Reconcile repeated or superseded research questions. The complete research log is '
                             'retained separately, so do not dump it into the main report. Preserve consequential dissent in the analysis.',
-                            {'brief':self.request,'findings':accepted,'requirements':self.requirements,
+                            {'brief':self.request,'findings':accepted,'requirements':self.requirements,**self.evidence_context(),
                              'unknowns':self.gaps[-35:],'success_criteria':plan['success_criteria'],
                              'coverage':self.coverage_result,'revision_feedback':getattr(self,'feedback',''),
                              'council':json.loads(council_file.read_text()) if council_file.exists() else None})
@@ -840,7 +1154,7 @@ class ResearchEngine:
                                'unsupported factual assertions, concealed gaps, or suppressed council dissent. '
                                'Explicit recommendations and proposed requirements need not be proven facts. '
                                'This is model review, not independent certification.',
-                               {'synthesis':synthesis,'reviewed_findings':accepted,
+                               {'synthesis':synthesis,'reviewed_findings':accepted,**self.evidence_context(),
                                 'material_gaps':self.gaps,'scope_limits':plan.get('scope_limits',[]),
                                 'council':json.loads(council_file.read_text()) if council_file.exists() else None})
         self.store.save(run_id,'synthesis-review.json',final_review)
@@ -878,10 +1192,12 @@ class ResearchEngine:
             unknowns=['No consolidated decision questions were published. Inspect the retained research log before treating this result as complete.']
         record=dict(schema_version=1,title=str(synthesis.get('title') or self.request['question']),question=self.request['question'],
                     summary=str(synthesis.get('summary') or 'Partial research result'),sources=self.sources,
-                    findings=[{**{k:f[k] for k in ('text','label','sources')},
+                    findings=[{**{k:f[k] for k in ('id','text','label','sources','quote','review','review_reason') if k in f},
                                'caveat':' '.join(dict.fromkeys([f['caveat']]+[d['caveat'] for d in self.findings if d.get('duplicate_of')==f['id']]))} for f in accepted],
-                    requirements=requirements,unknowns=unknowns,research_log=research_log)
+                    requirements=requirements,unknowns=unknowns,research_log=research_log,
+                    **({'mission':self.request['mission']} if self.request.get('mission') else {}))
         validate(record);self.store.save(run_id,'report.json',record)
+        if self.request.get('mission'):self.mission_output(record,accepted)
         self.check()
         spec=None
         if self.request.get('preset')=='pre-build':
@@ -899,10 +1215,18 @@ class ResearchEngine:
             self.store.save(run_id,'pre-build.json',{'schema':PRE_BUILD_SCHEMA,'preset':'pre-build','spec':spec,
                 'sources':[{k:x[k] for k in ('id','title','url','state','artifact_sha256','crawler','fetcher') if k in x} for x in self.sources],
                 'unknowns':unknowns,'artifacts':list(outputs),'acquisition':self.acquisition or {'provider':'unavailable','jobIds':[],'sourceHashes':[]}})
-        partial=bool(self.errors or (self.request.get('preset')=='pre-build' and not spec) or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
-        self.store.save(run_id,'usage.json',{'calls':getattr(self.model,'calls',None),'roles':getattr(self.model,'usage',[]),
+        partial=bool(self.errors or any(g.startswith('Native knowledge gap:') for g in self.gaps) or (self.request.get('preset')=='pre-build' and not spec) or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
+        usage=self.provider_usage+[{'session':self.provider_session,**row} for row in getattr(self.model,'usage',[])]
+        self.store.save(run_id,'usage.json',{'calls':len(self.role_calls),'session_calls':getattr(self.model,'calls',None),'roles':usage,
+                                           'provider_usage_complete':len(usage)==len(self.role_calls),
                                            'limits':limits,'dollar_cost':'unavailable; subscription usage and native-search costs are not a hard monetary budget'})
-        with self.store.lock:
+        while True:
+            # Waiting while holding the store would block pause's update and
+            # therefore the controller lock needed by resume/cancel.
             self.check()
-            self.store.update(run_id,status='partial' if partial else 'completed',stage='done',finished_at=timestamp(),
-                              outputs=outputs,errors=self.errors,findings=len(accepted),requirements=len(requirements))
+            with self.store.lock:
+                if self.cancelled.is_set():raise InterruptedError('Research cancelled')
+                if self.pause_requested.is_set():continue
+                self.store.update(run_id,status='partial' if partial else 'completed',stage='done',finished_at=timestamp(),
+                                  outputs=outputs,errors=self.errors,findings=len(accepted),requirements=len(requirements))
+                break

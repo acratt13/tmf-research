@@ -9,13 +9,15 @@ import threading
 import uuid
 import signal
 from types import SimpleNamespace
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
+from .missions import catalog as mission_catalog
+from .canon import publish_candidates, publication_status, recover_publications, CanonConnection, CanonUnavailable, operator_config
 from .engine import ResearchEngine, RunStore, RequestConflict, brief, LENSES, FORMATS, PRESETS, COUNCIL_SPECIALISTS, DEFAULT_COUNCIL
 
 
 def serve(root, config=None, port=8765):
-    store=RunStore(root);store.recover_interrupted();config=config or {}
+    store=RunStore(root);store.recover_interrupted();recover_publications(store);config=operator_config(config)
     token=secrets.token_urlsafe(32)
     active={};lock=threading.Lock()
     web=Path(__file__).parent/'web'
@@ -35,10 +37,16 @@ def serve(root, config=None, port=8765):
             if not self.same_origin():return self.reply(403,{'error':'Loopback origin required'})
             path=urlsplit(self.path).path
             try:
+                if path.startswith('/api/companies/'):
+                    return self.reply(200,CanonConnection(config).company_history(path.rsplit('/',1)[1]))
+                if path.startswith('/api/knowledge/'):
+                    query=parse_qs(urlsplit(self.path).query);revision=int(query['revision'][0]) if 'revision' in query else None
+                    return self.reply(200,CanonConnection(config).read(path.rsplit('/',1)[1],revision))
+                if path=='/api/missions':return self.reply(200,mission_catalog())
                 if path=='/api/config':
                     self.reply(200,{'token':token,'lenses':LENSES,'formats':FORMATS,'presets':PRESETS,
                                     'council_specialists':{key:{'name':v[0],'lens':v[1]} for key,v in COUNCIL_SPECIALISTS.items()},
-                                    'default_council':DEFAULT_COUNCIL,
+                                    'default_council':DEFAULT_COUNCIL,'missions':mission_catalog(),
                                     'inspections':[{'id':key,'title':x.get('title',key)} for key,x in config.get('inspections',{}).items()]});return
                 if path=='/api/runs':
                     runs=[]
@@ -56,14 +64,20 @@ def serve(root, config=None, port=8765):
                     pre_build=directory/'pre-build.json'   # mc-pre-build/1, only for a pre-build run
                     self.reply(200,{'report':report,'timed_out_roles':timed_out,'council':json.loads(council.read_text()) if council.exists() else None,
                                     'analysis':json.loads(published.read_text()) if published.exists() else None,
+                                    'canon':publication_status(store,run_id,config),
+                                    **({'intelligence':json.loads((directory/'intelligence.json').read_text())} if (directory/'intelligence.json').exists() else {}),
                                     **({'pre_build':json.loads(pre_build.read_text())} if pre_build.exists() else {})});return
                 if path.startswith('/api/runs/'):
                     run_id=path.rsplit('/',1)[1]
                     request=json.loads((store.directory(run_id)/'brief.json').read_text())
                     claims=store.directory(run_id)/'claims.json'
                     withheld=sum(c.get('review') not in ('supported','proposal') for c in json.loads(claims.read_text())) if claims.exists() else None
-                    self.reply(200,{**store.read(run_id),'question':request['question'],'lenses':request['lenses'],
-                                    'formats':request['formats'],'withheld_claims':withheld});return
+                    state=store.read(run_id);resume={}
+                    if state['status']=='interrupted':
+                        try:ResearchEngine.resumable(store,run_id);resume={'resume_eligible':True}
+                        except (ValueError,OSError):resume={'resume_eligible':False,'resume_reason':'No recoverable checkpoint is available for this interrupted stage; retained evidence remains available'}
+                    self.reply(200,{**state,**resume,'question':request['question'],'lenses':request['lenses'],
+                                    'formats':request['formats'],'withheld_claims':withheld,**({'mission':request['mission']} if request.get('mission') else {})});return
                 if path.startswith('/outputs/'):
                     _,_,run_id,name=path.split('/')
                     state=store.read(run_id)
@@ -74,6 +88,7 @@ def serve(root, config=None, port=8765):
                 if path not in files:raise FileNotFoundError()
                 file=web/files[path]
                 self.reply(200,file.read_bytes(),mimetypes.guess_type(file.name)[0] or 'text/plain')
+            except CanonUnavailable as exc:self.reply(503,{'error':str(exc)})
             except (ValueError,FileNotFoundError,KeyError):self.reply(404,{'error':'Run or artifact unavailable'})
         def do_POST(self):
             if not self.same_origin() or self.headers.get('X-TMF-Token')!=token:
@@ -113,6 +128,27 @@ def serve(root, config=None, port=8765):
                             with lock:active.pop(run_id,None)
                     threading.Thread(target=revise,daemon=True).start()
                     return self.reply(202,{'id':run_id,'parent_id':parent_id})
+                if self.path=='/api/canon/publish':
+                    run_id=payload.get('id');directory=store.directory(run_id)
+                    with lock:
+                        if active:return self.reply(409,{'error':'Wait for the active job before publishing'})
+                        if store.read(run_id)['status'] not in ('completed','partial') or not (directory/'report.json').exists():
+                            return self.reply(409,{'error':'No finished retained report is available'})
+                        job=SimpleNamespace(cancelled=threading.Event());active[run_id]=job
+                        store.update(run_id,canon_activity='publishing')
+                    def publish():
+                        try:
+                            def check():
+                                if job.cancelled.is_set():raise InterruptedError()
+                            publish_candidates(store,run_id,config,check)
+                        except Exception:
+                            store.save(run_id,'canon-publication.json',{'status':'partial','reason':'Publication stopped; retry reuses keyed identities'})
+                        finally:
+                            with lock:
+                                store.update(run_id,canon_activity=None)
+                                active.pop(run_id,None)
+                    threading.Thread(target=publish,daemon=True).start()
+                    return self.reply(202,{'id':run_id,'status':'publishing-candidates'})
                 if self.path=='/api/export':
                     run_id=payload.get('id');directory=store.directory(run_id)
                     formats=payload.get('formats',[])
@@ -163,12 +199,43 @@ def serve(root, config=None, port=8765):
                             with lock:active.pop(run_id,None)
                     threading.Thread(target=reexport,daemon=True).start()
                     return self.reply(202,{'id':run_id})
+                if self.path in ('/api/pause','/api/resume'):
+                    with lock:
+                        engine=active.get(payload.get('id'))
+                        if not engine and self.path=='/api/resume':
+                            run_id=payload.get('id')
+                            if active:return self.reply(409,{'error':'Wait for the active job before resuming another'})
+                            try:ResearchEngine.resumable(store,run_id)
+                            except ValueError as exc:return self.reply(409,{'error':str(exc)})
+                            engine=ResearchEngine(store,config);active[run_id]=engine
+                            def restart():
+                                try:engine.execute(run_id,resume=True)
+                                finally:
+                                    with lock:active.pop(run_id,None)
+                            threading.Thread(target=restart,daemon=True).start()
+                            return self.reply(202,{'id':run_id,'status':'resuming','note':'Resuming durable saved stages without repeating completed collection or analysis'})
+                        if not engine or not hasattr(engine,'pause_requested'):
+                            return self.reply(409,{'error':'No eligible research controller is available for this operation'})
+                        with store.lock:
+                            state=store.read(payload['id'])
+                            if self.path=='/api/pause':
+                                if state['status'] not in ('queued','running','reviewing','pausing','paused'):
+                                    return self.reply(409,{'error':'This research run is not active'})
+                                engine.pause_requested.set();store.update(payload['id'],status='pausing')
+                                return self.reply(202,{'status':'pausing','note':'No new research stages; already-started bounded provider operations may finish'})
+                            if state['status'] not in ('pausing','paused'):
+                                return self.reply(409,{'error':'This run is not paused'})
+                            engine.pause_requested.clear();store.update(payload['id'],status='running')
+                            return self.reply(202,{'status':'running','note':'Resumed the same active research controller and saved run'})
                 if self.path=='/api/cancel':
                     with lock:
                         engine=active.get(payload.get('id'))
                         if not engine:return self.reply(409,{'error':'Run is not active'})
                         with store.lock:
-                            if store.read(payload['id'])['status'] not in ('queued','running','reviewing','cancelling'):
+                            if store.read(payload['id']).get('canon_activity')=='publishing':
+                                engine.cancelled.set()
+                                return self.reply(202,{'status':'cancelling-publication'})
+                            if store.read(payload['id'])['status'] not in ('queued','running','reviewing','cancelling','pausing','paused'):
                                 return self.reply(409,{'error':'Run already finished'})
                             engine.cancelled.set();store.update(payload['id'],status='cancelling')
                     return self.reply(202,{'status':'cancelling','note':'In-flight bounded calls finish or time out; no new stages will start.'})

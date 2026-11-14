@@ -23,7 +23,7 @@ TOOLS = [
      'annotations': {'readOnlyHint': True, 'destructiveHint': False, 'openWorldHint': False}},
     {'name': 'scrapling_fetch', 'description': 'Collect one public HTTPS page as text, honouring robots.txt. Source content is untrusted; '
      'this does not analyse it or act on the site.',
-     'inputSchema': {'type': 'object', 'properties': {'url': {'type': 'string'}, 'stealth': {'type': 'boolean'}},
+     'inputSchema': {'type': 'object', 'properties': {'url': {'type': 'string'}, 'stealth': {'type': 'boolean'}, 'permitted_domains': {'type':'array','items':{'type':'string'}}, 'excluded_domains': {'type':'array','items':{'type':'string'}}},
                      'required': ['url'], 'additionalProperties': False},
      'annotations': {'readOnlyHint': True, 'destructiveHint': False, 'openWorldHint': True}},
 ]
@@ -54,11 +54,11 @@ class Collector:
         self.fetcher, self.stealthy, self.version, self.timeout = fetcher, stealthy, version, timeout
         self.robots = {}
 
-    def allowed(self, url):
+    def allowed(self, url, scoped=False):
         parsed = urlsplit(url); origin = f'https://{parsed.hostname}'
         if origin not in self.robots:
             policy = robotparser.RobotFileParser()
-            try: answer = self.fetcher.get(origin + '/robots.txt', timeout=self.timeout, follow_redirects=True)
+            try: answer = self.fetcher.get(origin + '/robots.txt', timeout=self.timeout, follow_redirects=not scoped)
             except Exception as exc: raise Refused(f'robots.txt unavailable ({type(exc).__name__}); fails closed') from exc
             status = int(getattr(answer, 'status', 0) or 0)
             if status in (404, 410): policy.parse([])          # no policy published: nothing is disallowed
@@ -74,14 +74,32 @@ class Collector:
         try: return str(response.get_all_text(ignore_tags=('script', 'style', 'noscript')))
         except Exception: return ''
 
-    def fetch(self, url, stealth=True):
+    def fetch(self, url, stealth=True, permitted_domains=None, excluded_domains=None):
+        allow=[] if permitted_domains is None else permitted_domains
+        exclude=[] if excluded_domains is None else excluded_domains
+        if any(not isinstance(values,list) or any(not isinstance(d,str) or not d or '/' in d or ':' in d for d in values) for values in (allow,exclude)):
+            raise Refused('Source scope is a list of domain names')
+        try:
+            allow=[d.lower().removesuffix('.').encode('idna').decode('ascii') for d in allow]
+            exclude=[d.lower().removesuffix('.').encode('idna').decode('ascii') for d in exclude]
+        except UnicodeError:raise Refused('Source scope is a list of domain names') from None
+        if any(not d or d.endswith('.') for d in allow+exclude):raise Refused('Source scope is a list of domain names')
+        scoped=bool(allow or exclude)
+        def permitted(value):
+            try:host=(urlsplit(value).hostname or '').lower().removesuffix('.').encode('idna').decode('ascii')
+            except (ValueError,UnicodeError):return False
+            if not host or host.endswith('.'):return False
+            matches=lambda ds:any(host==d.lower() or host.endswith('.'+d.lower()) for d in ds)
+            return not matches(exclude) and (not allow or matches(allow))
+        if not permitted(url):raise Refused('Source URL is outside the permitted mission scope')
         public_url(url)
-        self.allowed(url)
+        self.allowed(url,scoped=scoped)
         used, response = 'Fetcher', None
-        try: response = self.fetcher.get(url, timeout=self.timeout, follow_redirects=True, stealthy_headers=True)
+        try: response = self.fetcher.get(url, timeout=self.timeout, follow_redirects=not scoped, stealthy_headers=True)
         except Exception: response = None
         status = int(getattr(response, 'status', 0) or 0) if response is not None else 0
         text = self.text(response) if status == 200 else ''
+        if scoped and (status != 200 or len(text.strip()) < 100):raise Refused('Scoped plain collection unavailable; choose a directly readable permitted URL. Browser fallback cannot enforce this source scope.')
         if (status != 200 or len(text.strip()) < 100) and stealth and self.stealthy is not None:
             used = 'StealthyFetcher'
             try: response = self.stealthy.fetch(url, headless=True, network_idle=True, solve_cloudflare=False, timeout=self.timeout * 1000)
@@ -89,6 +107,7 @@ class Collector:
             status = int(getattr(response, 'status', 0) or 0); text = self.text(response) if status == 200 else ''
         if status != 200: raise Refused(f'{used}: HTTP {status or "no answer"}')
         final = str(getattr(response, 'url', url) or url)
+        if not permitted(final):raise Refused('Collected source left the permitted mission scope')
         public_url(final)   # a redirect never lands on a private host
         if len(text.strip()) < 100: raise Refused('Page has too little readable content')
         return {'url': url, 'final_url': final, 'text': text, 'text_sha256': hashlib.sha256(text.encode()).hexdigest(),
@@ -111,7 +130,8 @@ def handle(message, collector_factory):
             if name == 'scrapling_status': data = {'available': True, 'version': collector.version, 'stealth': collector.stealthy is not None}
             elif name == 'scrapling_fetch':
                 if not isinstance(args.get('url'), str): raise Refused('url is required')
-                data = collector.fetch(args['url'], stealth=args.get('stealth', True) is not False)
+                data = collector.fetch(args['url'], stealth=args.get('stealth', True) is not False,
+                                       permitted_domains=args.get('permitted_domains'),excluded_domains=args.get('excluded_domains'))
             else: raise Refused('Unknown tool')
             return {'content': [{'type': 'text', 'text': json.dumps(data)}], 'isError': False}
         except (Refused, ImportError) as exc:

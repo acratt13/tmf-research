@@ -1,1 +1,13 @@
-{"allow":["submit","status","result","cancel"]}
+{
+  "allow": [
+    "submit",
+    "status",
+    "result",
+    "cancel",
+    "publish",
+    "missions",
+    "pause",
+    "resume",
+    "knowledge"
+  ]
+}

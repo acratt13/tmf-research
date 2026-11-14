@@ -85,6 +85,22 @@ class ServerTests(unittest.TestCase):
         self.assertIn('disallows', replies[2]['result']['content'][0]['text'])
 
 
+class ScopedCollectorTests(unittest.TestCase):
+    @patch('socket.getaddrinfo',return_value=PUBLIC)
+    def test_scoped_collection_does_not_follow_redirects_or_start_browser_fallback(self,_):
+        fetcher=FakeFetcher();stealth=FakeStealthy();collector=server.Collector(fetcher,stealth,'fixture')
+        collector.fetch('https://example.com/docs',permitted_domains=['example.com'])
+        self.assertTrue(all(kwargs['follow_redirects'] is False for _,kwargs in fetcher.calls))
+        self.assertEqual(stealth.calls,[])
+        prior=len(fetcher.calls)
+        with self.assertRaises(server.Refused):collector.fetch('https://outside.example/docs',permitted_domains=['example.com'])
+        self.assertEqual(len(fetcher.calls),prior)
+        blocked=server.Collector(FakeFetcher(page=(302,'')),stealth,'fixture')
+        with self.assertRaisesRegex(server.Refused,'Scoped plain collection unavailable'):
+            blocked.fetch('https://example.com/docs',permitted_domains=['example.com'])
+        self.assertEqual(stealth.calls,[])
+
+
 class BlockedSiteCrawlee(FakeCrawlee):
     """example.com collects; blocked.example cannot (its Crawlee job fails)."""
     def call(self, name, args):

@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import select
 import subprocess
 import tempfile
 import tomllib
@@ -20,7 +21,7 @@ class SharedWrapperTests(unittest.TestCase):
             command.write_text('''#!/usr/bin/env python3
 import sys
 if '--help' in sys.argv:
-    print('Commands:\\n  submit  Submit a brief\\n  status  Read state\\n  result  Read results\\n  cancel  Cancel work\\n  serve   Start a server\\n  run     Run synchronously')
+    print('Commands:\\n  submit  Submit a brief\\n  status  Read state\\n  result  Read results\\n  cancel  Cancel work\\n  publish  Save candidates\\n  missions  Mission catalog\\n  pause  Pause stages\\n  resume  Resume stages\\n  knowledge  Read knowledge\\n  serve   Start a server\\n  run     Run synchronously')
 else:
     from tmf_research.client import page
     from tmf_research.cli import dump
@@ -36,10 +37,28 @@ else:
             replacements = {'${plugin:.mc-cli-shim/cli-mcp-shim.mjs}': os.environ['MC_CLI_SHIM'],
                             '${data}/tmf-research-allow.json': str(allow), 'tmf-research': str(command)}
             argv = [server['command']] + [replacements.get(arg, arg) for arg in server['args']]
-            result = subprocess.run(argv,
-                                    input=''.join(json.dumps(r) + '\n' for r in requests), capture_output=True,
-                                    text=True, timeout=10, check=True, env=env, cwd=folder)
-            return [json.loads(line) for line in result.stdout.splitlines()]
+            # MCP is an ongoing stdio session. EOF tells the real shim to stop,
+            # so keep stdin open until the asynchronous tool response arrives.
+            process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, text=True, env=env, cwd=folder)
+            replies = []
+            try:
+                for request in requests:
+                    process.stdin.write(json.dumps(request) + '\n'); process.stdin.flush()
+                    ready, _, _ = select.select([process.stdout], [], [], 10)
+                    self.assertTrue(ready, 'Shared shim did not answer within the fixture timeout')
+                    line = process.stdout.readline()
+                    self.assertTrue(line, 'Shared shim closed before its response')
+                    replies.append(json.loads(line))
+            finally:
+                process.stdin.close()
+                try: process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill(); process.wait(timeout=3)
+                errors = process.stderr.read()
+                process.stdout.close(); process.stderr.close()
+            self.assertEqual(process.returncode, 0, errors)
+            return replies
 
     def test_annotations_match_the_real_console_tool_names(self):
         root = Path(__file__).resolve().parents[1]
@@ -51,9 +70,9 @@ else:
         reply, = self.exchange([{'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}])
         annotations = json.loads((root / 'tmf_research/mc/tool-annotations.json').read_text())['toolAnnotations']
         names = [t['name'] for t in reply['result']['tools']]
-        self.assertEqual(names, ['tmf-research_' + op for op in ('submit', 'status', 'result', 'cancel')])
+        self.assertEqual(names, ['tmf-research_' + op for op in ('submit', 'status', 'result', 'cancel', 'publish', 'missions', 'pause', 'resume', 'knowledge')])
         self.assertEqual({name: annotations.get('mcp.tmf-research/' + name, {}).get('readOnlyHint') for name in names},
-                         {name: name.endswith(('_status', '_result')) for name in names})
+                         {name: name.endswith(('_status', '_result', '_missions', '_knowledge')) for name in names})
 
     def test_budget_uses_the_real_complete_mcp_result(self):
         reply, = self.exchange([{'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',

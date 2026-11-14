@@ -45,13 +45,53 @@ def designcraft_script(record, synthesis):
     return commands
 
 
+def business_lines(value):
+    """Use the existing semantic renderers for a readable business briefing."""
+    lines=[('body','Discovery limitation: '+reason) for reason in value.get('limitations',[])]
+    for item in value.get('companies',value.get('leads',[])):
+        lead=value.get('mission_type')=='leads'
+        lines += [('heading',('Lead qualification' if lead else 'Company consultation briefing')+' / '+item['name']+' ('+item['domain']+')'),
+                  ('body','Candidate public-source intelligence; researched '+item['research_date']+'. Independent verification: not established.')]
+        if lead:
+            if item.get('priority'):lines.append(('body','Research priority '+str(item['priority']['rank'])+': '+item['priority']['basis']))
+            if item.get('qualification',{}).get('scope_status'):lines.append(('body','Scope fit: '+item['qualification']['scope_status']))
+            for key,fit in item.get('scope_fit',{}).items():
+                lines.append(('body',key+': '+fit['status']+' / '+fit['reason']+'; findings '+(', '.join(fit['finding_ids']) or 'unknown')))
+            if item.get('opportunity_basis'):
+                basis=item['opportunity_basis'];lines.append(('body','Opportunity basis ['+basis['label'].upper()+']: '+basis['text']+'; findings '+(', '.join(basis['finding_ids']) or 'unknown')))
+            lines += [('body','Industry classification: '+item['industry']),('body','[INFERRED OPPORTUNITY] '+item['opportunity']),
+                      ('body','[PROPOSED SERVICE] '+item['potential_service']),('body','Estimated fit: '+item['estimated_fit']+'; subjective confidence: '+item['confidence'])]
+            for key in ('industry_evidence','location'):
+                if key in item:
+                    section=item[key];lines.append(('body',key.replace('_',' ')+': ['+section['label'].upper()+'] '+section['text']+'; findings '+(', '.join(section['finding_ids']) or 'unknown')))
+            lines += [('body','Assumption: '+text) for text in item.get('assumptions',[])]
+            lines += [('body','Unknown: '+text) for text in item.get('unknowns',[])]
+        else:
+            for key,section in {**item['sections'],**item.get('startup_sections',{})}.items():
+                lines += [('heading',key.replace('_',' ')),('body','['+section['label'].upper()+'] '+section['text']+' (findings: '+(', '.join(section['finding_ids']) or 'none; unknown')+')')]
+        lines.append(('heading','Supporting reviewed findings'))
+        for finding in item.get('supporting_evidence',[]):
+            lines.append(('body','['+finding['label'].upper()+'] '+finding['finding_id']+': '+finding['text']+' ('+', '.join(source['source_id'] for source in finding['sources'])+')'))
+        prior=item.get('continuity')
+        if prior:
+            lines += [('heading','Previous investigations and comparison'),('body',prior.get('comparison_scope') or prior.get('reason') or 'No earlier Research investigation found in this workspace.')]
+            if prior.get('truncated'):lines.append(('body','This is a bounded part of linked history; original records remain in Canon.'))
+            for previous in prior.get('previous',[]):
+                ref=previous['reference'];lines.append(('body',ref['id']+' revision '+str(ref['revision'])+'; researched '+str(previous.get('research_date') or 'date unknown')))
+            for change in prior.get('changes',[]):
+                lines += [('body',change['field'].replace('_',' ')+' / '+change['status']+': previously '+str(change['previous_text'])+'; now '+change['current_text'])]
+    return lines
+
+
 def export_run(directory, record, synthesis, formats, config, check_cancel=lambda:None):
     directory=Path(directory); out=directory/'outputs';out.mkdir(exist_ok=False)
     (directory/'published-analysis.json').write_text(dump(synthesis))
     outputs=[];errors=[]; receipts=[]
     lines=report_lines(record)
+    intelligence_path=directory/'intelligence.json'
+    intelligence_value=json.loads(intelligence_path.read_text()) if intelligence_path.exists() else None
     # Synthesis sections are proposed analysis, separate from reviewed factual findings.
-    insert=[]
+    insert=business_lines(intelligence_value) if intelligence_value and intelligence_value.get('verification')=='model-reviewed' else []
     for section in synthesis.get('sections',[])[:12]:
         if isinstance(section,dict):
             insert.extend([('heading','Analysis / proposed design: '+str(section.get('heading',''))),('body',str(section.get('text','')))])
@@ -109,7 +149,9 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
                 else:pdf_report(out/'report.pdf',lines)
                 retain('report.pdf')
             elif fmt=='builder':
-                bundle={'report':record,'analysis':synthesis,'kind':'Research blueprint; not implementation proof'}
+                bundle={'report':record,'analysis':synthesis,'kind':'Research blueprint; not implementation proof',**({'intelligence':intelligence_value} if intelligence_value else {})}
+                execution=directory/'publication-execution.json'
+                if execution.exists():bundle['execution_evidence']=json.loads(execution.read_text())
                 for key in ('plan','claims','council'):
                     path=directory/(key+'.json')
                     if path.exists():bundle[key]=json.loads(path.read_text())
@@ -201,6 +243,9 @@ def export_run(directory, record, synthesis, formats, config, check_cancel=lambd
                 retain('workflow.json');retain('workflow.html')
         except (OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError,RuntimeError) as exc:
             errors.append(f'Requested {fmt} export unavailable ({type(exc).__name__}); no successful export claimed')
+    intelligence=directory/'intelligence.json'
+    if intelligence.exists():
+        (out/'intelligence.json').write_bytes(intelligence.read_bytes());retain('intelligence.json')
     (out/'export-receipt.json').write_text(dump({'record_sha256':hashlib.sha256(dump(record).encode()).hexdigest(),
                                                'artifacts':receipts,'errors':errors,
                                                'limits':'Local adapter results; independent visual and format-interoperability review required.'}))
