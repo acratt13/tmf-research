@@ -395,7 +395,16 @@ class ResearchEngine:
     def event(self, stage, text): self.store.event(self.run_id, stage, text)
     def error(self, message):
         self.errors.append(message); self.store.update(self.run_id, errors=self.errors)
+    def budgeted_source_count(self):
+        return sum(bool(s.get('url')) or s.get('kind')=='native-knowledge' for s in self.sources)
+
     def search(self, queries):
+        if ((self.request.get('mission') or {}).get('role_knowledge') and
+                (not queries or self.budgeted_source_count()>=self.execution_limits['sources'])):
+            self.event('search','Using retained knowledge; no external source search requested or source budget remaining.')
+            self.store.save(self.run_id,f'search-{self.round}.json',{'sources':[],
+                'limitations':['External source search not run: no query or source budget remaining.']})
+            return []
         self.event('search', 'Source scout is searching for primary sources; search results are leads only.')
         lead_discovery=(self.request.get('mission') or {}).get('type')=='leads'
         preference=('For lead discovery, find distinct public businesses in the requested industry and geographic market. '
@@ -422,7 +431,7 @@ class ResearchEngine:
         seen = {s.get('url') for s in self.sources}
         for candidate in candidates:
             self.check()
-            if len([s for s in self.sources if s.get('url')]) >= limit: break
+            if self.budgeted_source_count() >= limit: break
             url = candidate['url']
             if not permits(self.request.get('mission'),url):
                 self.gaps.append('Source excluded by mission scope: '+url);continue
@@ -470,7 +479,7 @@ class ResearchEngine:
         topic = (self.request.get('workstream') or {}).get('goal') or self.request['question']
         tags = ['pre-build'] + ([self.request['workstream']['id']] if self.request.get('workstream', {}).get('id') else [])
         try:
-            remaining=max(0,limit-len([s for s in self.sources if s.get('url')]))
+            remaining=max(0,limit-self.budgeted_source_count())
             selected=list(sites.items())[:8]
             for index,(host, urls) in enumerate(selected):
                 self.check()
@@ -503,7 +512,7 @@ class ResearchEngine:
             for job_id, state in states.items():
                 self.acquisition['jobs'].append({'id': job_id, 'status': state.get('status'), **({'reason': str(state['reason'])[:300]} if state.get('reason') else {})})
                 for item in state.get('sources', []):
-                    if len([x for x in self.sources if x.get('url')]) >= limit: break
+                    if self.budgeted_source_count() >= limit: break
                     sid = f'S{len(self.sources)+1:03}'
                     source = {'id': sid, 'title': str(item.get('title') or item.get('url'))[:200], 'url': item.get('final_url') or item.get('url'),
                               'crawler': 'crawlee', 'retrieved_at': item.get('retrieved_at') or timestamp(), 'scope': f'Crawlee swarm job {job_id}, source {item.get("id")}.',
@@ -553,7 +562,7 @@ class ResearchEngine:
         parallel, each source hash-checked into the same evidence review; an unavailable plugin is said once, by name."""
         self.event('swarm', f'Scrapling plugin: collecting {len(sites)} site(s) the Crawlee worker could not ({", ".join(sites)}).')
         record = {'sites': list(sites), 'fetched': 0, 'failed': 0}; self.acquisition['scrapling'] = record
-        remaining=max(0,limit-len([s for s in self.sources if s.get('url')]))
+        remaining=max(0,limit-self.budgeted_source_count())
         if not remaining:return
         make = self.scrapling_factory or (lambda: ScraplingPlugin(**((self.config.get('crawlers') or {}).get('scrapling') or {})))
         probe = make()
@@ -580,7 +589,7 @@ class ResearchEngine:
             for client in clients: client.close()
         for url in urls:
             self.check()
-            if len([x for x in self.sources if x.get('url')]) >= limit: break
+            if self.budgeted_source_count() >= limit: break
             got, sid = results.get(url, ProviderError('not collected')), f'S{len(self.sources)+1:03}'
             source = {'id': sid, 'title': url[:200], 'url': url, 'crawler': 'scrapling', 'retrieved_at': timestamp(),
                       'scope': 'Scrapling plugin, for a site the Crawlee worker could not collect.',
@@ -863,6 +872,33 @@ class ResearchEngine:
                 self.store.save(self.run_id,'sources.json',self.sources)
         except CanonUnavailable as exc:raise ProviderError(str(exc)) from None
 
+    def role_knowledge(self, requested):
+        if not requested:return
+        from .role_knowledge import resolve_role_knowledge
+        # Native passages count toward the same source budget as other evidence.
+        remaining=max(0,self.execution_limits['sources']-len(self.sources))
+        selection=resolve_role_knowledge(requested[:remaining],self.config,self.check)
+        selection['gaps'] += [{'doc_id':r['doc_id'],'content_hash':r['content_hash'],
+            'reason':'source_budget_exceeded','research_query':r['purpose']} for r in requested[remaining:]]
+        selection['status']='partial' if selection['gaps'] else 'complete'
+        selection['captured_at']=timestamp()
+        directory=self.store.directory(self.run_id)/'evidence';directory.mkdir(exist_ok=True)
+        (directory/'role-knowledge.json').write_text(json.dumps(selection,ensure_ascii=False,sort_keys=True))
+        self.gaps.extend('Native knowledge gap: '+g['reason']+'; '+g['research_query'] for g in selection['gaps'])
+        for native in selection['sources']:
+            self.check();sid=f'S{len(self.sources)+1:03}'
+            text='\n\n'.join(c['text'] for c in native['chunks']);digest=hashlib.sha256(text.encode()).hexdigest()
+            directory=self.store.directory(self.run_id)/'evidence';directory.mkdir(exist_ok=True)
+            (directory/(sid+'.body')).write_bytes(text.encode());(directory/(sid+'.txt')).write_text(text)
+            provenance={k:v for k,v in native.items() if k!='chunks'}
+            provenance['chunk_refs']=[{k:v for k,v in c.items() if k!='text'} for c in native['chunks']]
+            self.sources.append({'id':sid,'title':native['title'],'kind':'native-knowledge','state':'available',
+                'native_knowledge':provenance,'retrieved_at':timestamp(),'artifact_sha256':digest,
+                'scope':'Selected native knowledge chunks for: '+native['purpose'],
+                'limitations':'Captured indexed knowledge, not independent verification or an approved rule. Currentness: '+native['source_currentness']['state']})
+            self.packets.append({'id':sid,'title':native['title'],'text':text,'state':'available'})
+        self.store.save(self.run_id,'sources.json',self.sources)
+
     def execute(self, run_id, resume=False):
         self.run_id=run_id; self.request=json.loads((self.store.directory(run_id)/'brief.json').read_text())
         limits={**DEPTHS[self.request['depth']], **(PRESETS.get(self.request.get('preset'), {}).get('limits') or {})}
@@ -891,6 +927,8 @@ class ResearchEngine:
             self.model=self.model_override or CodexModel(self.config.get('codex','codex'), max_calls=limits['calls'])
             self.store.update(run_id,status='running')
             if mission:self.checkpoint('knowledge',lambda:self.knowledge(mission['knowledge_refs']))
+            if mission and mission.get('role_knowledge'):
+                self.checkpoint('role-knowledge',lambda:self.role_knowledge(mission['role_knowledge']))
             self.event('plan','Research lead is decomposing the selected lenses into bounded investigations.')
             plan=self.checkpoint('plan',lambda:self.call('Research lead', 'Plan the investigation. Return {"queries":["..."],'
                            '"tasks":[{"role":"...","question":"..."}],"experts":[{"role":"...","lens":"..."}],'
@@ -898,8 +936,12 @@ class ResearchEngine:
                            'Cover every selected lens in the three tasks. First map the relevant scope and relationships, '
                            'then allocate complementary investigations. Broad requests need the shared foundation before narrow examples; '
                            'focused requests should stay focused. Adapt to supplied context rather than assuming one organization or domain. '
-                           'Experts are functional perspectives, not invented credentials.',
-                           {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']},**({'evidence':self.packets} if self.packets else {})}))
+                           'Experts are functional perspectives, not invented credentials. '
+                           'Reuse supplied knowledge first. When it covers the goal, return queries:[]. '
+                           'For missing or outdated knowledge, name the gap and propose only scoped queries within the mission domains and budget.',
+                           {'brief':self.request,'lenses':{x:LENSES[x] for x in self.request['lenses']},
+                            **({'knowledge_gaps':self.gaps} if self.gaps else {}),
+                            **({'evidence':self.packets} if self.packets else {})}))
             criteria=plan.get('success_criteria',[])
             plan['success_criteria']=[str(c)[:1000] for c in criteria[:8] if isinstance(c,str) and c.strip()] if isinstance(criteria,list) else []
             if not plan['success_criteria']: plan['success_criteria']=[self.request['question']]
@@ -985,13 +1027,20 @@ class ResearchEngine:
             evidence=directory/'evidence';evidence.mkdir()
             for source in self.sources:
                 if source['state']=='unavailable':continue
-                retained_text=source.get('url') or source.get('kind') in ('local-document','canon-knowledge')
+                retained_text=source.get('url') or source.get('kind') in ('local-document','canon-knowledge','native-knowledge')
                 original=parent/'evidence'/(source['id']+'.body') if retained_text else parent/(source['id']+'.json')
                 if hashlib.sha256(original.read_bytes()).hexdigest()!=source['artifact_sha256']: raise ProviderError('Parent source integrity mismatch')
                 shutil.copyfile(original,evidence/original.name if retained_text else directory/original.name)
                 if retained_text:shutil.copyfile(parent/'evidence'/(source['id']+'.txt'),evidence/(source['id']+'.txt'))
-            self.store.save(run_id,'revision.json',{'parent_id':parent_id,'parent_report_sha256':report_hash,'feedback':feedback,
-                'scope':'Retained-evidence synthesis revision; original retrieval times preserved; no source acquisition or automatic replay'})
+            revision={'parent_id':parent_id,'parent_report_sha256':report_hash,'feedback':feedback,
+                'scope':'Retained-evidence synthesis revision; original retrieval times preserved; no source acquisition or automatic replay'}
+            if self.request.get('mission',{}).get('role_knowledge'):
+                from .role_knowledge import retained_selection
+                native=retained_selection(self.store,parent_id)
+                raw=json.dumps(native,ensure_ascii=False,sort_keys=True).encode()
+                (evidence/'role-knowledge.json').write_bytes(raw)
+                revision['native_knowledge_sha256']=hashlib.sha256(raw).hexdigest()
+            self.store.save(run_id,'revision.json',revision)
             self.errors=['Retained source '+s['id']+' is unavailable' for s in self.sources if s['state']=='unavailable']
             limits={'sources':0,'rounds':0,'calls':4+(2 if self.request.get('mission',{}).get('type') not in (None,'general','technology','council') else 0)}
             self.call_limit=limits['calls'];self.execution_limits=limits;self.concurrency=self.request.get('mission',{}).get('budgets',{}).get('concurrency',self.concurrency)
@@ -1166,7 +1215,7 @@ class ResearchEngine:
             self.store.save(run_id,'pre-build.json',{'schema':PRE_BUILD_SCHEMA,'preset':'pre-build','spec':spec,
                 'sources':[{k:x[k] for k in ('id','title','url','state','artifact_sha256','crawler','fetcher') if k in x} for x in self.sources],
                 'unknowns':unknowns,'artifacts':list(outputs),'acquisition':self.acquisition or {'provider':'unavailable','jobIds':[],'sourceHashes':[]}})
-        partial=bool(self.errors or (self.request.get('preset')=='pre-build' and not spec) or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
+        partial=bool(self.errors or any(g.startswith('Native knowledge gap:') for g in self.gaps) or (self.request.get('preset')=='pre-build' and not spec) or any(f['review'] in ('unsupported','uncertain') for f in self.findings) or not requirements or any(c['status']!='answered' for c in self.coverage_result['criteria']))
         usage=self.provider_usage+[{'session':self.provider_session,**row} for row in getattr(self.model,'usage',[])]
         self.store.save(run_id,'usage.json',{'calls':len(self.role_calls),'session_calls':getattr(self.model,'calls',None),'roles':usage,
                                            'provider_usage_complete':len(usage)==len(self.role_calls),

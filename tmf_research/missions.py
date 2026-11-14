@@ -96,7 +96,7 @@ def normalize(value):
     if not isinstance(value, dict) or value.get('schema') != SCHEMA or value.get('type') not in TYPES:
         raise ValueError('Use a supported versioned research mission; security assessment is not implemented')
     allowed = {'schema', 'type', 'target', 'scope', 'permitted_domains', 'excluded_domains', 'collection', 'budgets',
-               'verification', 'completion_criteria', 'specialists', 'profession', 'public_person', 'consent', 'knowledge_refs', 'industry', 'geography'}
+               'verification', 'completion_criteria', 'specialists', 'profession', 'public_person', 'consent', 'knowledge_refs', 'role_knowledge', 'industry', 'geography'}
     if set(value) - allowed: raise ValueError('Unknown mission fields: ' + ', '.join(sorted(set(value) - allowed)))
     result = {'schema': SCHEMA, 'type': value['type'], 'target':text(value.get('target', ''), 'mission target', required=True),
               'scope':text(value.get('scope', ''), 'mission scope'),
@@ -133,6 +133,10 @@ def normalize(value):
     references=value.get('knowledge_refs',[])
     if not isinstance(references,list) or len(references)>12:raise ValueError('Select at most twelve Canon knowledge revisions')
     result['knowledge_refs']=[]
+    if 'role_knowledge' in value:
+        if value['type'] != 'profession':raise ValueError('Native role knowledge selection belongs to a profession mission')
+        from .role_knowledge import selections
+        result['role_knowledge']=selections(value['role_knowledge'])
     for reference in references:
         if (not isinstance(reference,dict) or set(reference)!={'id','revision'}
                 or not isinstance(reference.get('id'),str) or not re.fullmatch(r'cn-[a-f0-9-]{36}',reference['id'])
@@ -150,7 +154,7 @@ def normalize(value):
 
 def catalog():
     return {'schema': SCHEMA, 'types': TYPES, 'input_fields': ['target', 'scope', 'permitted_domains', 'excluded_domains',
-            'collection', 'budgets', 'verification', 'completion_criteria', 'specialists', 'profession', 'public_person', 'consent', 'knowledge_refs','industry','geography'],
+            'collection', 'budgets', 'verification', 'completion_criteria', 'specialists', 'profession', 'public_person', 'consent', 'knowledge_refs','role_knowledge','industry','geography'],
             'tools': ['submit', 'status', 'result', 'cancel', 'publish', 'missions', 'pause', 'resume', 'knowledge'],
             'authority': 'All generated knowledge and specialty definitions remain candidates; no agent creation, role deployment, recurring missions or security assessment',
             'canvas': {'app':'tmf-research', 'query':{'run':'saved run id'}},

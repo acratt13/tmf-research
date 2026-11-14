@@ -48,7 +48,7 @@ function timedOutSection(roles){
 async function showResult(id){
  try{
   const result=await api('/api/result/'+id);if(id!==runId)return;
-  $('canon-status').textContent='Canon: '+result.canon.status+(result.canon.reason?' · '+result.canon.reason:'')+(result.canon.mission?' · '+result.canon.mission.id+' revision '+result.canon.mission.revision:'')+(result.canon.role_plugin?' · Role package: '+result.canon.role_plugin.status+(result.canon.role_plugin.reason?' · '+result.canon.role_plugin.reason:''):'');
+  $('canon-status').textContent='Canon: '+result.canon.status+(result.canon.reason?' · '+result.canon.reason:'')+(result.canon.mission?' · '+result.canon.mission.id+' revision '+result.canon.mission.revision:'')+(result.canon.role_plugin?' · Role package: '+result.canon.role_plugin.status+(result.canon.role_plugin.reason?' · '+result.canon.role_plugin.reason:'')+(result.canon.role_plugin.native_knowledge?' · Selected knowledge: '+result.canon.role_plugin.native_knowledge.sources+' sources, '+result.canon.role_plugin.native_knowledge.gaps+' gaps':''):'');
   const signature=JSON.stringify({...result,canon:null});
   if(renderedRun===id&&renderedSignature===signature&&$('result').childNodes.length)return;
   renderedRun=id;renderedSignature=signature;

@@ -140,6 +140,22 @@ Professional-role packages (0.8.0 source): publishing a profession mission now p
 
 The archive contains the ordinary `tmf-plugin.json`, a `skills/<id>/SKILL.md`, and a `role.json` specialty definition with provenance. It references the exact Canon collection and knowledge revisions rather than copying their bodies. It requests the existing Research knowledge tool; the receiving worker still needs its normal authorized connection to that tool. It has no runtime, permissions, secret references, worker identity or automatic install/assignment. Source role revisions retain the plugin ID and advance the version; distinct Canon specialty identities remain distinct packages. Candidate expertise remains draft. This proves package generation and compatibility with existing MC skills, not completion of the planned Hub Role sections or live worker acceptance.
 
+Native knowledge-backed roles (0.9.0 **source only**): the existing knowledge database is the origin, not a plugin. A profession mission can select bounded native material using `role_knowledge`, for example:
+
+```json
+{"doc_id":"kn-0123456789ab","content_hash":"<64-character indexed document hash>","chunk_indexes":[0,2],"purpose":"Implement and troubleshoot plugins using documented procedures"}
+```
+
+The field is a list of at most twelve document selections, each with at most eight distinct chunk indexes. Choose IDs/pins through MC's existing knowledge discovery/read interfaces; this slice does not add a competing search index or ranker. Native selections consume the mission's existing source budget. The existing profession workflow receives their bounded passages before planning/analysis. Missing knowledge enters the existing scoped research plan as an explicit gap; collection still follows the selected mode, domain restrictions and budget. Packaging itself never crawls, refreshes the index or writes the knowledge database.
+
+The native connection is operator-owned configuration: `native_knowledge: {"url":"http://127.0.0.1:4320","actor":"<authorized caller>","token_env":"MC_KNOWLEDGE_AUTH"}`. Equivalent environment names are `TMF_RESEARCH_KNOWLEDGE_URL`, `TMF_RESEARCH_KNOWLEDGE_ACTOR`, `TMF_RESEARCH_KNOWLEDGE_AUTH`, and `TMF_RESEARCH_KNOWLEDGE_TOKEN_ENV`. Explicit `auth: "local-operator"` sends no added credential when the existing host operator policy admits loopback access; a refusal never falls back to another mode. The named authorization must be provisioned for MC's existing governed read route; no credential discovery, actor fallback or raw-database fallback exists. Mission/source content cannot configure this connection. The client uses the additive native `read_knowledge` contract from MC source `52251e1f3`: exact document ID/content hash, pinned paging and ordered chunk references. The previous unpinned API cannot silently satisfy this contract.
+
+Role packages retain selected native passages in `knowledge/selection.json` and `knowledge/role-knowledge.md`, with document/chunk hashes, source kind, source timestamps, currentness and role purpose. These immutable package artifacts preserve what the role used; they are not a second database or authority. On-demand knowledge skill cards carry the same captured passages through the normal MC skill reader, so consuming the package does not require unrelated filesystem access. Large passages are split within the reader's body budget. Private actor-owned material is refused; builder-only material restricts the package audience to builders, and agent-only material to agents. Shared authored material retains author provenance.
+
+`current` means the source matched its normalized indexed hash when captured. `indexed_only` does not claim an externally verified source. Changed, missing, unverified, restricted, incomplete or unavailable sources stay explicit gaps and keep the mission partial. A changed indexed pin returns a conflict; no historical body lookup is invented. Runtime `read_knowledge` resolves current source state with the saved pin, while the package preserves its captured material. Refinements retain the original hash-checked selection without reacquisition. Nothing creates a worker or grants permissions.
+
+Installed 0.8.0 does **not** establish this native integration. The shared Builder/main data linkage prevents assuming storage isolation. Native adapter activation, safe shared startup and connection provisioning require the existing owners' serialized installation work; no installation or live native-tool invocation is part of this source slice.
+
 The full-spec boundary remains explicit:
 
 | Spec phase | Source implementation / current limit |
@@ -150,7 +166,7 @@ The full-spec boundary remains explicit:
 | 3 business intelligence | Structured company/startup/lead/market missions, evidence checks and deduplication; official-host evidence binding, explicit startup sections, qualified lead evidence and scoped prior-investigation comparison; real-subject quality needs live evidence review |
 | 4 bounded workers | Existing crawler/Council execution, budgets, durable remote job references and cancellation; no new scheduler, remote worker pause/recovery not established |
 | 5 professional knowledge | Independent sourced Canon entries and shared versioned collections; updates remain candidates |
-| 6 roles/agents | Published profession specialties export reusable MC skill plugins with exact Canon references; native importer/shared-reader fixtures pass. Actual Hub role-socket assignment, live worker use, worker creation and evaluation remain unconnected |
+| 6 roles/agents | Published specialties export reusable MC skill plugins; 0.9.0 source adds bounded native database passages, on-demand knowledge skills and exact provenance; real native-route/import/shared-reader fixtures pass. Actual Hub role-socket assignment, live worker use, worker creation and evaluation remain unconnected |
 | 7 councils | Custom responsibilities on the existing Council with saved reusable configurations; no automatic agent deployment |
 | 8 persons | Labeled public-professional research and generic expertise drafts; private-person consent required; no voice/personality runtime or deployed simulation |
 | 9 distributed scale | Not implemented; existing authorized runtime/worker contracts must be used |

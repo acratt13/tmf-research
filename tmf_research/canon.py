@@ -319,7 +319,12 @@ def publish_candidates(store, run_id, config, check=lambda: None):
             from .role_plugins import export_role_plugin
             try:
                 source = next(ref for ref in intelligence_refs if ref['kind'] == 'specialty')
-                receipt['role_plugin'] = export_role_plugin(store, run_id, connection, source, check)
+                requested=json.loads((store.directory(run_id)/'brief.json').read_text()).get('mission',{}).get('role_knowledge',[])
+                native=None
+                if requested:
+                    from .role_knowledge import retained_selection
+                    native=retained_selection(store,run_id)
+                receipt['role_plugin'] = export_role_plugin(store, run_id, connection, source, check, native)
             except (CanonUnavailable, ValueError, OSError, StopIteration):
                 receipt['role_plugin'] = {'status': 'unavailable',
                     'reason': 'Role package export failed; Canon publication retained. Check exact knowledge references and output storage, then retry publish.'}
@@ -481,4 +486,9 @@ def operator_config(config=None, environment=None):
             'auth':env.get('TMF_RESEARCH_CANON_AUTH','bearer'),
             'author':env.get('TMF_RESEARCH_CANON_AUTHOR','tmf-research'),
             'token_env':env.get('TMF_RESEARCH_CANON_TOKEN_ENV','MC_CANON_TOKEN')}
+    if 'native_knowledge' not in result and env.get('TMF_RESEARCH_KNOWLEDGE_URL'):
+        result['native_knowledge']={'url':env['TMF_RESEARCH_KNOWLEDGE_URL'],
+            'actor':env.get('TMF_RESEARCH_KNOWLEDGE_ACTOR',''),
+            'auth':env.get('TMF_RESEARCH_KNOWLEDGE_AUTH','bearer'),
+            'token_env':env.get('TMF_RESEARCH_KNOWLEDGE_TOKEN_ENV','')}
     return result
