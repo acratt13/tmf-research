@@ -140,7 +140,7 @@ Professional-role packages (0.8.0 source): publishing a profession mission now p
 
 The archive contains the ordinary `tmf-plugin.json`, a `skills/<id>/SKILL.md`, and a `role.json` specialty definition with provenance. It references the exact Canon collection and knowledge revisions rather than copying their bodies. It requests the existing Research knowledge tool; the receiving worker still needs its normal authorized connection to that tool. It has no runtime, permissions, secret references, worker identity or automatic install/assignment. Source role revisions retain the plugin ID and advance the version; distinct Canon specialty identities remain distinct packages. Candidate expertise remains draft. This proves package generation and compatibility with existing MC skills, not completion of the planned Hub Role sections or live worker acceptance.
 
-Native knowledge-backed roles (0.9.0 **source only**): the existing knowledge database is the origin, not a plugin. A profession mission can select bounded native material using `role_knowledge`, for example:
+Native knowledge-backed roles (0.9.0; bounded installed proof recorded in docs/VERIFICATION.md): the existing knowledge database is the origin, not a plugin. A profession mission can select bounded native material using `role_knowledge`, for example:
 
 ```json
 {"doc_id":"kn-0123456789ab","content_hash":"<64-character indexed document hash>","chunk_indexes":[0,2],"purpose":"Implement and troubleshoot plugins using documented procedures"}
@@ -154,7 +154,7 @@ Role packages retain selected native passages in `knowledge/selection.json` and 
 
 `current` means the source matched its normalized indexed hash when captured. `indexed_only` does not claim an externally verified source. Changed, missing, unverified, restricted, incomplete or unavailable sources stay explicit gaps and keep the mission partial. A changed indexed pin returns a conflict; no historical body lookup is invented. Runtime `read_knowledge` resolves current source state with the saved pin, while the package preserves its captured material. Refinements retain the original hash-checked selection without reacquisition. Nothing creates a worker or grants permissions.
 
-Installed 0.8.0 does **not** establish this native integration. The shared Builder/main data linkage prevents assuming storage isolation. Native adapter activation, safe shared startup and connection provisioning require the existing owners' serialized installation work; no installation or live native-tool invocation is part of this source slice.
+The shared Builder/main data linkage prevents assuming storage isolation. Safe host activation and Research 0.9.0 installation are now verified for bounded read-only native retrieval and role packaging. The installed-module proof used a temporary operator-bound connection; it did not persist a new service credential or connection, assign a live role, start a mission or resume a worker. Production mission-side connection provisioning and full publish/worker acceptance remain separate, unproven steps.
 
 The full-spec boundary remains explicit:
 
